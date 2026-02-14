@@ -222,10 +222,18 @@ class ScrapingScheduler:
 
     def stop(self):
         """Stop the scheduler"""
+        if not self.is_running:
+            return
+
         logger.info("Stopping scraping scheduler...")
-        self.scheduler.shutdown()
-        self.is_running = False
-        logger.info("Scheduler stopped")
+        try:
+            # Use wait=False to avoid blocking on job completion
+            self.scheduler.shutdown(wait=False)
+        except Exception as e:
+            logger.error(f"Error stopping scheduler: {e}")
+        finally:
+            self.is_running = False
+            logger.info("Scheduler stopped")
 
     def get_status(self) -> dict:
         """Get scheduler status"""

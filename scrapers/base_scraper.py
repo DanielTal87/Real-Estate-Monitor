@@ -9,6 +9,8 @@ from database import Listing, ScrapingState
 from sqlalchemy.orm import Session
 import json
 
+from utils.phone_normalizer import normalize_israeli_phone
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,12 +22,14 @@ class BaseScraper(ABC):
         self.source_name = source_name
         self.browser: Optional[Browser] = None
         self.page: Optional[Page] = None
+        self.playwright = None
+        self.context = None
 
     async def initialize(self):
         """Initialize browser and page"""
-        playwright = await async_playwright().start()
+        self.playwright = await async_playwright().start()
 
-        self.browser = await playwright.webkit.launch(
+        self.browser = await self.playwright.webkit.launch(
             headless=True,
             args=[
                 '--disable-blink-features=AutomationControlled',
@@ -34,12 +38,12 @@ class BaseScraper(ABC):
             ]
         )
 
-        context = await self.browser.new_context(
+        self.context = await self.browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         )
 
-        self.page = await context.new_page()
+        self.page = await self.context.new_page()
 
         # Load cookies if available
         await self._load_cookies()
@@ -53,19 +57,19 @@ class BaseScraper(ABC):
         if state and state.cookies_json:
             try:
                 cookies = json.loads(state.cookies_json)
-                if cookies and self.page:
-                    await self.page.context.add_cookies(cookies)
+                if cookies and self.context:
+                    await self.context.add_cookies(cookies)
                     logger.info(f"Loaded cookies for {self.source_name}")
             except Exception as e:
                 logger.warning(f"Failed to load cookies for {self.source_name}: {e}")
 
     async def _save_cookies(self):
         """Save current cookies"""
-        if not self.page:
+        if not self.context:
             return
 
         try:
-            cookies = await self.page.context.cookies()
+            cookies = await self.context.cookies()
 
             state = self.db.query(ScrapingState).filter(
                 ScrapingState.source == self.source_name
@@ -133,20 +137,13 @@ class BaseScraper(ABC):
         return None
 
     def normalize_phone(self, phone: str) -> str:
-        """Normalize phone number for matching"""
-        if not phone:
-            return ""
+        """
+        Normalize phone number for matching.
 
-        # Remove all non-digit characters
-        digits = ''.join(c for c in phone if c.isdigit())
-
-        # Handle Israeli phone numbers
-        if digits.startswith('972'):
-            digits = '0' + digits[3:]
-        elif digits.startswith('+972'):
-            digits = '0' + digits[4:]
-
-        return digits
+        Deprecated: Use utils.phone_normalizer.normalize_israeli_phone instead.
+        This method is kept for backward compatibility.
+        """
+        return normalize_israeli_phone(phone) or ""
 
     def update_scraping_state(self, success: bool = True, error_msg: Optional[str] = None):
         """Update scraping state in database"""
@@ -178,8 +175,23 @@ class BaseScraper(ABC):
         except Exception as e:
             logger.warning(f"Error saving cookies during cleanup: {e}")
 
-        if self.browser:
-            await self.browser.close()
+        try:
+            if self.context:
+                await self.context.close()
+        except Exception as e:
+            logger.warning(f"Error closing context: {e}")
+
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception as e:
+            logger.warning(f"Error closing browser: {e}")
+
+        try:
+            if self.playwright:
+                await self.playwright.stop()
+        except Exception as e:
+            logger.warning(f"Error stopping playwright: {e}")
 
     @abstractmethod
     async def scrape(self) -> List[Dict]:

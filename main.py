@@ -41,14 +41,18 @@ async def run_scheduler():
     """Run the scraping scheduler"""
     scheduler = ScrapingScheduler()
     scheduler.start()
-    
+
     try:
         # Keep running
         while True:
             await asyncio.sleep(60)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Received shutdown signal")
         scheduler.stop()
+    finally:
+        # Ensure cleanup happens
+        if scheduler.is_running:
+            scheduler.stop()
 
 
 async def run_dashboard():
@@ -69,18 +73,18 @@ async def main():
     logger.info("=" * 60)
     logger.info("Real Estate Monitor Starting...")
     logger.info("=" * 60)
-    
+
     # Setup database
     setup_database()
-    
+
     # Create tasks for scheduler and dashboard
     scheduler_task = asyncio.create_task(run_scheduler())
     dashboard_task = asyncio.create_task(run_dashboard())
-    
+
     logger.info(f"Dashboard available at: http://{settings.dashboard_host}:{settings.dashboard_port}")
     logger.info("Scheduler is running. Scraping will begin shortly.")
     logger.info("Press Ctrl+C to stop.")
-    
+
     # Wait for both tasks
     try:
         await asyncio.gather(scheduler_task, dashboard_task)
@@ -88,6 +92,13 @@ async def main():
         logger.info("Shutting down gracefully...")
         scheduler_task.cancel()
         dashboard_task.cancel()
+
+        # Wait for tasks to complete cancellation
+        try:
+            await asyncio.gather(scheduler_task, dashboard_task, return_exceptions=True)
+        except Exception:
+            pass
+
         logger.info("Goodbye!")
 
 
