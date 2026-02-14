@@ -5,11 +5,11 @@ import asyncio
 import random
 import logging
 from datetime import datetime
-from database import Listing, ScrapingState
+from app.core.database import Listing, ScrapingState
 from sqlalchemy.orm import Session
 import json
 
-from utils.phone_normalizer import normalize_israeli_phone
+from app.utils.phone_normalizer import normalize_israeli_phone
 
 logger = logging.getLogger(__name__)
 

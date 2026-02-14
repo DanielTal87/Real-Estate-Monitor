@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from fuzzywuzzy import fuzz
 
-from database import Listing
+from app.core.database import Listing
 
 
 class DuplicateDetector:

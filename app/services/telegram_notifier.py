@@ -1,9 +1,9 @@
 from telegram import Bot
 from telegram.error import TelegramError
 from sqlalchemy.orm import Session
-from database import Listing, Notification
-from config import settings
-from deal_score import DealScoreCalculator
+from app.core.database import Listing, Notification
+from app.core.config import settings
+from app.core.deal_score import DealScoreCalculator
 from datetime import datetime, timedelta
 import logging
 from typing import Optional

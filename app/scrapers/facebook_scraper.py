@@ -1,4 +1,4 @@
-from scrapers.base_scraper import BaseScraper
+from app.scrapers.base_scraper import BaseScraper
 from typing import List, Dict, Optional
 import logging
 import re

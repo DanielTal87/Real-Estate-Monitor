@@ -10,10 +10,10 @@ import sys
 from pathlib import Path
 
 import uvicorn
-from config import settings
-from database import init_db
-from scheduler import ScrapingScheduler
-from deal_score import update_neighborhood_stats
+from app.core.config import settings
+from app.core.database import init_db
+from app.services.scheduler import ScrapingScheduler
+from app.core.deal_score import update_neighborhood_stats
 
 
 # Configure logging
@@ -58,7 +58,7 @@ async def run_scheduler():
 async def run_dashboard():
     """Run the web dashboard"""
     config = uvicorn.Config(
-        "dashboard:app",
+        "app.services.dashboard:app",
         host=settings.dashboard_host,
         port=settings.dashboard_port,
         log_level=settings.log_level.lower(),

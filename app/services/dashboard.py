@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
-from database import Listing, NeighborhoodStats, init_db
-from config import settings
+from app.core.database import Listing, NeighborhoodStats, init_db
+from app.core.config import settings
 from datetime import datetime, timedelta
 from typing import Optional
 import logging

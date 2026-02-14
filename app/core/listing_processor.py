@@ -1,14 +1,14 @@
 from sqlalchemy.orm import Session
-from database import Listing, PriceHistory, DescriptionHistory
-from deal_score import DealScoreCalculator
-from config import settings
+from app.core.database import Listing, PriceHistory, DescriptionHistory
+from app.core.deal_score import DealScoreCalculator
+from app.core.config import settings
 from datetime import datetime
 import logging
 from typing import Dict, Optional, List
 
-from utils.phone_normalizer import normalize_israeli_phone
-from utils.duplicate_detector import DuplicateDetector
-from utils.listing_filter import ListingFilter
+from app.utils.phone_normalizer import normalize_israeli_phone
+from app.utils.duplicate_detector import DuplicateDetector
+from app.utils.listing_filter import ListingFilter
 
 logger = logging.getLogger(__name__)
 

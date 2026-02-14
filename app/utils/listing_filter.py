@@ -1,7 +1,7 @@
 """Listing filtering utilities based on user preferences"""
 
 from typing import Dict, Tuple, Optional, Any
-from config import Settings
+from app.core.config import Settings
 
 
 class ListingFilter:

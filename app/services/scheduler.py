@@ -1,14 +1,14 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from scrapers.yad2_scraper import Yad2Scraper
-from scrapers.madlan_scraper import MadlanScraper
-from scrapers.facebook_scraper import FacebookScraper
-from scrapers.base_scraper import ScraperWithRetry
-from listing_processor import ListingProcessor
-from telegram_notifier import TelegramNotifier
-from deal_score import update_neighborhood_stats
-from database import init_db
-from config import settings
+from app.scrapers.yad2_scraper import Yad2Scraper
+from app.scrapers.madlan_scraper import MadlanScraper
+from app.scrapers.facebook_scraper import FacebookScraper
+from app.scrapers.base_scraper import ScraperWithRetry
+from app.core.listing_processor import ListingProcessor
+from app.services.telegram_notifier import TelegramNotifier
+from app.core.deal_score import update_neighborhood_stats
+from app.core.database import init_db
+from app.core.config import settings
 import logging
 import asyncio
 
@@ -187,7 +187,7 @@ class ScrapingScheduler:
             return
 
         try:
-            from database import Listing
+            from app.core.database import Listing
             from datetime import datetime, timedelta
 
             notifier = TelegramNotifier(db)

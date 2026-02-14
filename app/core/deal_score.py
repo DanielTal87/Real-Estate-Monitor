@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
-from database import Listing, NeighborhoodStats
-from config import settings
+from app.core.database import Listing, NeighborhoodStats
+from app.core.config import settings
 import statistics
 
 
