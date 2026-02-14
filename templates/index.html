@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Estate Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .listing-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-bottom: 1rem;
+        }
+        .listing-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+        .deal-score {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        .badge-high { background-color: #28a745; }
+        .badge-medium { background-color: #ffc107; color: #000; }
+        .badge-low { background-color: #6c757d; }
+        .price-tag {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stats-card {
+            border-left: 4px solid #007bff;
+        }
+        .feature-icon {
+            font-size: 1.2rem;
+            margin: 0 5px;
+        }
+        .image-thumbnail {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px 8px 0 0;
+        }
+        .action-btn {
+            margin: 2px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-house-door"></i> Real Estate Monitor
+            </span>
+            <span class="text-white">
+                <i class="bi bi-clock"></i> Last Update: Now
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-building"></i> Total Listings</h5>
+                        <p class="display-6">{{ total_listings }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #28a745;">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-star-fill"></i> New Today</h5>
+                        <p class="display-6 text-success">{{ new_today }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #ffc107;">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-trophy"></i> High Score</h5>
+                        <p class="display-6 text-warning">{{ high_score }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card" style="border-left-color: #dc3545;">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="bi bi-funnel"></i> Filters Active</h5>
+                        <p class="display-6">
+                            {% if current_city or current_neighborhood or current_min_score > 0 %}
+                                <i class="bi bi-check-circle text-success"></i>
+                            {% else %}
+                                <i class="bi bi-x-circle text-secondary"></i>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-sliders"></i> Filters & Sorting</h5>
+                <form method="get" action="/" class="row g-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <option value="all" {% if current_status == 'all' %}selected{% endif %}>All</option>
+                            <option value="unseen" {% if current_status == 'unseen' %}selected{% endif %}>Unseen</option>
+                            <option value="interested" {% if current_status == 'interested' %}selected{% endif %}>Interested</option>
+                            <option value="contacted" {% if current_status == 'contacted' %}selected{% endif %}>Contacted</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">City</label>
+                        <select name="city" class="form-select">
+                            <option value="">All Cities</option>
+                            {% for city in cities %}
+                                <option value="{{ city }}" {% if city == current_city %}selected{% endif %}>{{ city }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Neighborhood</label>
+                        <select name="neighborhood" class="form-select">
+                            <option value="">All</option>
+                            {% for neighborhood in neighborhoods %}
+                                <option value="{{ neighborhood }}" {% if neighborhood == current_neighborhood %}selected{% endif %}>{{ neighborhood }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Min Score</label>
+                        <input type="number" name="min_score" class="form-control" value="{{ current_min_score }}" min="0" max="100">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Sort By</label>
+                        <select name="sort_by" class="form-select">
+                            <option value="deal_score" {% if current_sort == 'deal_score' %}selected{% endif %}>Deal Score</option>
+                            <option value="newest" {% if current_sort == 'newest' %}selected{% endif %}>Newest First</option>
+                            <option value="price_asc" {% if current_sort == 'price_asc' %}selected{% endif %}>Price (Low-High)</option>
+                            <option value="price_desc" {% if current_sort == 'price_desc' %}selected{% endif %}>Price (High-Low)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-search"></i> Apply
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Listings Grid -->
+        <div class="row">
+            {% for listing in listings %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card listing-card">
+                    {% if listing.get_images() %}
+                        <img src="{{ listing.get_images()[0] }}" class="image-thumbnail" alt="Property">
+                    {% else %}
+                        <div class="image-thumbnail bg-secondary d-flex align-items-center justify-content-center">
+                            <i class="bi bi-house-door text-white" style="font-size: 4rem;"></i>
+                        </div>
+                    {% endif %}
+
+                    <div class="card-body">
+                        <!-- Deal Score Badge -->
+                        <div class="float-start mb-2">
+                            <span class="badge {% if listing.deal_score >= 80 %}badge-high{% elif listing.deal_score >= 60 %}badge-medium{% else %}badge-low{% endif %}">
+                                <i class="bi bi-star-fill"></i> {{ listing.deal_score|round }}
+                            </span>
+                        </div>
+
+                        <!-- New/Price Drop Tags -->
+                        <div class="float-end mb-2">
+                            {% if (datetime.now() - listing.first_seen).days == 0 %}
+                                <span class="badge bg-success">NEW</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="clearfix"></div>
+
+                        <!-- Title -->
+                        <h5 class="card-title">{{ listing.title[:60] }}{% if listing.title|length > 60 %}...{% endif %}</h5>
+
+                        <!-- Address -->
+                        <p class="text-muted mb-2">
+                            <i class="bi bi-geo-alt"></i> {{ listing.address[:50] }}{% if listing.address|length > 50 %}...{% endif %}
+                        </p>
+
+                        <!-- Price -->
+                        <div class="price-tag mb-2">
+                            {{ format_price(listing.price) }}
+                            {% if listing.price_per_sqm %}
+                                <small class="text-muted">({{ listing.price_per_sqm|round }}₪/m²)</small>
+                            {% endif %}
+                        </div>
+
+                        <!-- Details -->
+                        <p class="mb-2">
+                            {% if listing.rooms %}
+                                <span class="badge bg-info">{{ listing.rooms }} חדרים</span>
+                            {% endif %}
+                            {% if listing.size_sqm %}
+                                <span class="badge bg-info">{{ listing.size_sqm|round }} מ״ר</span>
+                            {% endif %}
+                            {% if listing.floor is not none %}
+                                <span class="badge bg-info">קומה {{ listing.floor }}</span>
+                            {% endif %}
+                        </p>
+
+                        <!-- Features -->
+                        <p class="mb-3">
+                            {% if listing.has_parking %}
+                                <i class="bi bi-p-square feature-icon text-success" title="Parking"></i>
+                            {% endif %}
+                            {% if listing.has_elevator %}
+                                <i class="bi bi-arrow-up-square feature-icon text-success" title="Elevator"></i>
+                            {% endif %}
+                            {% if listing.has_balcony %}
+                                <i class="bi bi-flower1 feature-icon text-success" title="Balcony"></i>
+                            {% endif %}
+                            {% if listing.has_mamad %}
+                                <i class="bi bi-shield-fill-check feature-icon text-success" title="Mamad"></i>
+                            {% endif %}
+                        </p>
+
+                        <!-- Source & Date -->
+                        <p class="text-muted small mb-3">
+                            <i class="bi bi-link-45deg"></i> {{ listing.source|title }}
+                            | <i class="bi bi-calendar"></i> {{ days_ago(listing.first_seen) }}
+                        </p>
+
+                        <!-- Action Buttons -->
+                        <div class="btn-group w-100 mb-2" role="group">
+                            <a href="{{ listing.url }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-box-arrow-up-right"></i> View
+                            </a>
+                            {% set whatsapp = get_whatsapp_url(listing.contact_phone, listing.address, listing.source) %}
+                            {% if whatsapp %}
+                                <a href="{{ whatsapp }}" target="_blank" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-whatsapp"></i> WhatsApp
+                                </a>
+                            {% endif %}
+                            <a href="/listing/{{ listing.id }}" class="btn btn-outline-info btn-sm">
+                                <i class="bi bi-info-circle"></i> Details
+                            </a>
+                        </div>
+
+                        <!-- Status Actions -->
+                        <div class="btn-group w-100" role="group">
+                            <button onclick="updateStatus({{ listing.id }}, 'interested')"
+                                    class="btn btn-sm {% if listing.status == 'interested' %}btn-success{% else %}btn-outline-success{% endif %}">
+                                <i class="bi bi-heart-fill"></i>
+                            </button>
+                            <button onclick="updateStatus({{ listing.id }}, 'not_interested')"
+                                    class="btn btn-sm {% if listing.status == 'not_interested' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                            <button onclick="updateStatus({{ listing.id }}, 'contacted')"
+                                    class="btn btn-sm {% if listing.status == 'contacted' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                                <i class="bi bi-telephone-fill"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if not listings %}
+        <div class="alert alert-info text-center" role="alert">
+            <i class="bi bi-info-circle"></i> No listings found matching your filters.
+        </div>
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function updateStatus(listingId, status) {
+            try {
+                const response = await fetch(`/api/listing/${listingId}/status?status=${status}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to update status');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error updating status');
+            }
+        }
+
+        // Auto-refresh every 5 minutes
+        setTimeout(() => location.reload(), 5 * 60 * 1000);
+    </script>
+</body>
+</html>

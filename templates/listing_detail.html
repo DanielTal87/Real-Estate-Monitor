@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ listing.title }} - Real Estate Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .property-image {
+            width: 100%;
+            max-height: 400px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .deal-badge {
+            font-size: 2rem;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <a href="/" class="navbar-brand">
+                <i class="bi bi-arrow-right"></i> Back to Dashboard
+            </a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Header Section -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <h1>{{ listing.title }}</h1>
+                <p class="lead text-muted">
+                    <i class="bi bi-geo-alt"></i> {{ listing.address }}
+                </p>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="card">
+                    <div class="card-body">
+                        <h5>Deal Score</h5>
+                        <div class="deal-badge badge {% if listing.deal_score >= 80 %}bg-success{% elif listing.deal_score >= 60 %}bg-warning{% else %}bg-secondary{% endif %}">
+                            {{ listing.deal_score|round }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Images -->
+        {% if listing.get_images() %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div id="carouselImages" class="carousel slide" data-bs-ride="carousel">
+                    <div class="carousel-inner">
+                        {% for image in listing.get_images() %}
+                        <div class="carousel-item {% if loop.first %}active{% endif %}">
+                            <img src="{{ image }}" class="d-block property-image mx-auto" alt="Property image">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if listing.get_images()|length > 1 %}
+                    <button class="carousel-control-prev" type="button" data-bs-target="#carouselImages" data-bs-slide="prev">
+                        <span class="carousel-control-prev-icon"></span>
+                    </button>
+                    <button class="carousel-control-next" type="button" data-bs-target="#carouselImages" data-bs-slide="next">
+                        <span class="carousel-control-next-icon"></span>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="row">
+            <!-- Left Column: Details -->
+            <div class="col-md-8">
+                <!-- Price & Basic Info -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h3 class="card-title">Price & Details</h3>
+                        <hr>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h4 class="text-primary">{{ format_price(listing.price) }}</h4>
+                                {% if listing.price_per_sqm %}
+                                <p class="text-muted">{{ listing.price_per_sqm|round }}₪ per m²</p>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Rooms:</strong> {{ listing.rooms or 'N/A' }}</p>
+                                <p><strong>Size:</strong> {{ listing.size_sqm|round if listing.size_sqm else 'N/A' }} מ״ר</p>
+                                <p><strong>Floor:</strong>
+                                    {% if listing.floor is not none %}
+                                        {{ listing.floor }}
+                                        {% if listing.total_floors %} / {{ listing.total_floors }}{% endif %}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Features -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h3 class="card-title">Features</h3>
+                        <hr>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <p>
+                                    <i class="bi bi-p-square {% if listing.has_parking %}text-success{% else %}text-muted{% endif %}"></i>
+                                    Parking: {% if listing.has_parking %}Yes{% else %}No{% endif %}
+                                </p>
+                            </div>
+                            <div class="col-md-4">
+                                <p>
+                                    <i class="bi bi-arrow-up-square {% if listing.has_elevator %}text-success{% else %}text-muted{% endif %}"></i>
+                                    Elevator: {% if listing.has_elevator %}Yes{% else %}No{% endif %}
+                                </p>
+                            </div>
+                            <div class="col-md-4">
+                                <p>
+                                    <i class="bi bi-flower1 {% if listing.has_balcony %}text-success{% else %}text-muted{% endif %}"></i>
+                                    Balcony: {% if listing.has_balcony %}Yes{% else %}No{% endif %}
+                                </p>
+                            </div>
+                            <div class="col-md-4">
+                                <p>
+                                    <i class="bi bi-shield-fill-check {% if listing.has_mamad %}text-success{% else %}text-muted{% endif %}"></i>
+                                    Mamad: {% if listing.has_mamad %}Yes{% else %}No{% endif %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Description -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h3 class="card-title">Description</h3>
+                        <hr>
+                        <p style="white-space: pre-wrap;">{{ listing.description or 'No description available.' }}</p>
+                    </div>
+                </div>
+
+                <!-- Price History -->
+                {% if price_history|length > 1 %}
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h3 class="card-title">Price History</h3>
+                        <hr>
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Right Column: Actions & Stats -->
+            <div class="col-md-4">
+                <!-- Actions -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Actions</h5>
+                        <hr>
+                        <a href="{{ listing.url }}" target="_blank" class="btn btn-primary w-100 mb-2">
+                            <i class="bi bi-box-arrow-up-right"></i> View on {{ listing.source|title }}
+                        </a>
+
+                        {% set whatsapp = get_whatsapp_url(listing.contact_phone, listing.address, listing.source) %}
+                        {% if whatsapp %}
+                        <a href="{{ whatsapp }}" target="_blank" class="btn btn-success w-100 mb-2">
+                            <i class="bi bi-whatsapp"></i> Contact via WhatsApp
+                        </a>
+                        {% endif %}
+
+                        {% if listing.contact_phone %}
+                        <a href="tel:{{ listing.contact_phone }}" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-telephone"></i> {{ listing.contact_phone }}
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Metadata -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Metadata</h5>
+                        <hr>
+                        <p><strong>Source:</strong> {{ listing.source|title }}</p>
+                        <p><strong>First Seen:</strong> {{ format_date(listing.first_seen) }}</p>
+                        <p><strong>Last Updated:</strong> {{ format_date(listing.last_seen) }}</p>
+                        <p><strong>Days Listed:</strong> {{ days_ago(listing.first_seen) }}</p>
+                        <p><strong>Status:</strong>
+                            <span class="badge bg-info">{{ listing.status|title }}</span>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Neighborhood Stats -->
+                {% if neighborhood_stats %}
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">Neighborhood Average</h5>
+                        <hr>
+                        <p><strong>{{ listing.neighborhood }}</strong></p>
+                        <p>Avg Price: {{ format_price(neighborhood_stats.avg_price) }}</p>
+                        <p>Avg per m²: {{ neighborhood_stats.avg_price_per_sqm|round }}₪</p>
+                        <p>Sample Size: {{ neighborhood_stats.sample_size }} listings</p>
+
+                        {% if listing.price_per_sqm and neighborhood_stats.avg_price_per_sqm %}
+                        <hr>
+                        {% set diff_pct = ((listing.price_per_sqm - neighborhood_stats.avg_price_per_sqm) / neighborhood_stats.avg_price_per_sqm * 100) %}
+                        <p>
+                            This listing is
+                            <strong class="{% if diff_pct < 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ diff_pct|abs|round(1) }}%
+                                {% if diff_pct < 0 %}below{% else %}above{% endif %}
+                            </strong>
+                            average
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    {% if price_history|length > 1 %}
+    <script>
+        // Price History Chart
+        const ctx = document.getElementById('priceChart');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [
+                    {% for h in price_history %}
+                        '{{ h.timestamp.strftime("%d/%m %H:%M") }}'{% if not loop.last %},{% endif %}
+                    {% endfor %}
+                ],
+                datasets: [{
+                    label: 'Price (₪)',
+                    data: [
+                        {% for h in price_history %}
+                            {{ h.price }}{% if not loop.last %},{% endif %}
+                        {% endfor %}
+                    ],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false
+                    }
+                }
+            }
+        });
+    </script>
+    {% endif %}
+</body>
+</html>
