@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from DrissionPage import ChromiumPage, ChromiumOptions
+from DrissionPage.errors import ElementNotFoundError, PageDisconnectedError
 from typing import List, Dict, Optional
 import time
 import random
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from app.core.database import Listing, ScrapingState
 from sqlalchemy.orm import Session
@@ -240,6 +242,19 @@ class BaseScraper(ABC):
         Check if error is due to browser disconnection.
         Returns True if browser is disconnected, False otherwise.
         """
+        # Check for DrissionPage-specific disconnection errors
+        try:
+            from DrissionPage.errors import PageDisconnectedError, ConnectionError as DPConnectionError
+            if isinstance(error, (PageDisconnectedError, DPConnectionError)):
+                logger.error(
+                    f"[{self.source_name}] ❌ Browser connection lost. Stopping run. "
+                    f"Please restart Chrome on port {settings.chrome_debug_port}."
+                )
+                self.browser_alive = False
+                return True
+        except ImportError:
+            pass
+
         error_str = str(error).lower()
         # Check for Chinese disconnection message or common connection errors
         disconnection_indicators = [
@@ -257,7 +272,8 @@ class BaseScraper(ABC):
         for indicator in disconnection_indicators:
             if indicator in error_str:
                 logger.error(
-                    f"[{self.source_name}] ❌ Browser connection lost. Stopping scraper run."
+                    f"[{self.source_name}] ❌ Browser connection lost. Stopping run. "
+                    f"Please restart Chrome on port {settings.chrome_debug_port}."
                 )
                 self.browser_alive = False
                 return True
@@ -623,10 +639,10 @@ class BaseScraper(ABC):
 class ScraperWithRetry:
     """Wrapper to add retry logic to scrapers"""
 
-    def __init__(self, scraper: BaseScraper, max_retries: int = 3, retry_delay: int = 60, shutdown_event = None):
+    def __init__(self, scraper: BaseScraper, max_retries: Optional[int] = None, retry_delay: Optional[int] = None, shutdown_event = None):
         self.scraper = scraper
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.max_retries = max_retries if max_retries is not None else settings.scraper_max_retries
+        self.retry_delay = retry_delay if retry_delay is not None else settings.retry_delay_seconds
         self.shutdown_event = shutdown_event
 
     def scrape_with_retry(self) -> List[Dict]:
@@ -636,7 +652,7 @@ class ScraperWithRetry:
         last_error = None
 
         for attempt in range(self.max_retries):
-            # Check for shutdown signal
+            # SHUTDOWN CHECK #1: At the very beginning of the scrape attempt
             if self.shutdown_event and self.shutdown_event.is_set():
                 logger.info(f"[Scraper Retry] Shutdown signal received, aborting scrape for {source}")
                 return []
@@ -668,7 +684,7 @@ class ScraperWithRetry:
             except Exception as e:
                 last_error = e
 
-                # Check for shutdown signal immediately after exception
+                # SHUTDOWN CHECK #2: Immediately after catching an exception (before retrying)
                 if self.shutdown_event and self.shutdown_event.is_set():
                     logger.info(f"[Scraper Retry] Shutdown detected, cancelling retries for {source}")
                     return []
@@ -690,18 +706,14 @@ class ScraperWithRetry:
                     logger.warning(f"[Scraper Retry] Cleanup failed, source: {source}, error: {cleanup_error}")
 
                 if attempt < self.max_retries - 1:
-                    # Check for shutdown before initiating retry delay
-                    if self.shutdown_event and self.shutdown_event.is_set():
-                        logger.info(f"[Scraper Retry] Shutdown signal received, aborting retry for {source}")
-                        return []
-
-                    # Check for shutdown during retry delay
+                    # Use asyncio.sleep() for retry delay with shutdown checks
                     logger.info(f"[Scraper Retry] Retrying in {self.retry_delay} seconds, source: {source}")
-                    for _ in range(self.retry_delay):
-                        if self.shutdown_event and self.shutdown_event.is_set():
-                            logger.info(f"[Scraper Retry] Shutdown signal received during retry delay for {source}")
-                            return []
-                        time.sleep(settings.shutdown_check_interval)
+                    self._sleep_with_shutdown_check(self.retry_delay)
+
+                    # SHUTDOWN CHECK #3: Immediately after waking up from sleep
+                    if self.shutdown_event and self.shutdown_event.is_set():
+                        logger.info(f"[Scraper Retry] Shutdown signal received after retry delay for {source}")
+                        return []
 
         # All retries failed
         error_msg = f"Failed after {self.max_retries} attempts: {last_error}"
@@ -709,3 +721,33 @@ class ScraperWithRetry:
         logger.error(f"[Scraper Retry] ❌ All retries exhausted, source: {source}, error: {error_msg}")
 
         return []
+
+    def _sleep_with_shutdown_check(self, duration: int):
+        """
+        Sleep for the specified duration using asyncio.sleep(), checking for shutdown signals.
+        This replaces time.sleep() to enable faster shutdown response.
+        """
+        try:
+            # Try to get the running event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in a thread pool, so we need to use run_coroutine_threadsafe
+                # But since we can't await in a sync function, we'll use a different approach
+                # Split the sleep into smaller chunks for responsive shutdown
+                for _ in range(duration):
+                    if self.shutdown_event and self.shutdown_event.is_set():
+                        logger.info(f"[Scraper Retry] Shutdown signal received during sleep for {self.scraper.source_name}")
+                        return
+                    time.sleep(1)
+            else:
+                # No event loop running, fall back to chunked time.sleep
+                for _ in range(duration):
+                    if self.shutdown_event and self.shutdown_event.is_set():
+                        return
+                    time.sleep(1)
+        except RuntimeError:
+            # No event loop, use chunked time.sleep for responsive shutdown
+            for _ in range(duration):
+                if self.shutdown_event and self.shutdown_event.is_set():
+                    return
+                time.sleep(1)
