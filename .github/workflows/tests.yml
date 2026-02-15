@@ -90,6 +90,22 @@ jobs:
         path: htmlcov/
         retention-days: 30
 
+    - name: Pytest coverage comment
+      uses: MishaKav/pytest-coverage-comment@main
+      if: matrix.python-version == '3.11' && github.event_name == 'pull_request'
+      continue-on-error: true
+      with:
+        pytest-coverage-path: ./coverage.xml
+        junitxml-path: ./pytest-results.xml
+        title: Coverage Report
+        badge-title: Coverage
+        hide-badge: false
+        hide-report: false
+        create-new-comment: false
+        hide-comment: false
+        report-only-changed-files: false
+        remove-link-from-badge: false
+
     - name: Generate test summary
       if: always()
       run: |
@@ -179,3 +195,15 @@ jobs:
             console.log('Failed to post PR comment:', error.message);
             console.log('This is expected for PRs from forks due to security restrictions');
           }
+
+    - name: Upload logs on failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: test-logs-py${{ matrix.python-version }}
+        path: |
+          *.log
+          debug_output/
+          pytest-results.xml
+        retention-days: 7
+        if-no-files-found: ignore

@@ -73,6 +73,7 @@ class BaseScraper(ABC):
         self.db = db_session
         self.source_name = source_name
         self.page: Optional[ChromiumPage] = page  # Allow injection of mock page
+        self.browser_alive = True  # Track browser connection status
 
     def initialize(self):
         """Initialize browser by connecting to existing Chrome instance on debug port"""
@@ -233,6 +234,33 @@ class BaseScraper(ABC):
 
         except Exception as e:
             logger.warning(f"Failed to save cookies for {self.source_name}: {e}")
+
+    def _check_browser_connection(self, error: Exception) -> bool:
+        """
+        Check if error is due to browser disconnection.
+        Returns True if browser is disconnected, False otherwise.
+        """
+        error_str = str(error).lower()
+        # Check for Chinese disconnection message or common connection errors
+        disconnection_indicators = [
+            "与页面的连接已断开",  # Chinese: "Connection to page has been disconnected"
+            "disconnected",
+            "connection lost",
+            "target closed",
+            "session not created",
+            "cannot connect to",
+        ]
+
+        for indicator in disconnection_indicators:
+            if indicator in error_str:
+                logger.error(
+                    f"[{self.source_name}] ❌ Browser connection lost. "
+                    f"Please ensure Chrome is open on port {settings.chrome_debug_port}."
+                )
+                self.browser_alive = False
+                return True
+
+        return False
 
     def random_delay(self, min_seconds: float = 1.0, max_seconds: float = 3.0):
         """Add random delay to appear human-like"""
@@ -610,6 +638,15 @@ class ScraperWithRetry:
 
             except Exception as e:
                 last_error = e
+
+                # Check if this is a browser disconnection error
+                if self.scraper._check_browser_connection(e):
+                    # Browser disconnected - stop retrying immediately
+                    error_msg = f"Browser connection lost: {e}"
+                    self.scraper.update_scraping_state(success=False, error_msg=error_msg)
+                    logger.error(f"[Scraper Retry] ❌ Browser disconnected, aborting all retries for {source}")
+                    return []
+
                 logger.error(f"[Scraper Retry] ❌ Attempt {attempt + 1} failed, source: {source}, error: {e}")
 
                 try:
@@ -619,6 +656,11 @@ class ScraperWithRetry:
                     logger.warning(f"[Scraper Retry] Cleanup failed, source: {source}, error: {cleanup_error}")
 
                 if attempt < self.max_retries - 1:
+                    # Check for shutdown before initiating retry delay
+                    if self.shutdown_event and self.shutdown_event.is_set():
+                        logger.info(f"[Scraper Retry] Shutdown signal received, aborting retry for {source}")
+                        return []
+
                     # Check for shutdown during retry delay
                     logger.info(f"[Scraper Retry] Retrying in {self.retry_delay} seconds, source: {source}")
                     for _ in range(self.retry_delay):
