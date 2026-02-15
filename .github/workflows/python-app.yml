@@ -57,6 +57,7 @@ jobs:
           --cov-report=xml \
           --cov-report=html \
           --cov-fail-under=60 \
+          --junitxml=pytest-results.xml \
           -m "not slow"
 
     - name: Run integration tests
@@ -106,25 +107,56 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const fs = require('fs');
+          const xml2js = require('xml2js');
 
           try {
+            // Parse coverage data
             const coverage = fs.readFileSync('coverage.xml', 'utf8');
             const match = coverage.match(/line-rate="([\d.]+)"/);
-            const coveragePct = match ? (parseFloat(match[1]) * 100).toFixed(1) : 'N/A';
+            const coveragePct = match ? (parseFloat(match[1]) * 100).toFixed(0) : 'N/A';
 
-            const comment = `## 🧪 Test Results
+            // Parse JUnit XML for test results
+            const junitXml = fs.readFileSync('pytest-results.xml', 'utf8');
+            const parser = new xml2js.Parser();
+            let testData = { tests: 0, skipped: 0, failures: 0, errors: 0, time: '0.0' };
 
-            **Coverage:** ${coveragePct}%
+            parser.parseString(junitXml, (err, result) => {
+              if (!err && result.testsuite) {
+                const suite = result.testsuite.$;
+                testData = {
+                  tests: suite.tests || 0,
+                  skipped: suite.skipped || 0,
+                  failures: suite.failures || 0,
+                  errors: suite.errors || 0,
+                  time: parseFloat(suite.time || 0).toFixed(2)
+                };
+              }
+            });
 
-            <details>
-            <summary>📊 View detailed coverage report</summary>
+            // Determine coverage badge color
+            const badgeColor = coveragePct >= 70 ? 'brightgreen' : coveragePct >= 50 ? 'yellow' : 'red';
+            const thresholdMet = coveragePct >= 60 ? '✅ Coverage threshold met (60%)' : '⚠️ Coverage below threshold (60%)';
 
-            Download the \`coverage-report-py3.11\` artifact from the workflow run to view the full HTML report.
-
-            </details>
-
-            ${coveragePct >= 35 ? '✅ Coverage threshold met (35%)' : '❌ Coverage below threshold (35%)'}
-            `;
+            const comment = [
+              '## 🧪 Test Results',
+              '',
+              `![Coverage](https://img.shields.io/badge/Coverage-${coveragePct}%25-${badgeColor})`,
+              '',
+              '### 📊 Test Summary',
+              '',
+              '| Tests | Skipped | Failures | Errors | Time |',
+              '|-------|---------|----------|--------|------|',
+              `| ${testData.tests} | ${testData.skipped} 🦘 | ${testData.failures} ❌ | ${testData.errors} 🔥 | ${testData.time}s ⏱️ |`,
+              '',
+              '<details>',
+              '<summary>📈 View detailed coverage report</summary>',
+              '',
+              'Download the `coverage-report-py3.11` artifact from the workflow run to view the full HTML report.',
+              '',
+              '</details>',
+              '',
+              thresholdMet
+            ].join('\n');
 
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
