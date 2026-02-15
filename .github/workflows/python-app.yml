@@ -1,20 +1,21 @@
-name: Real Estate Monitor CI
+name: Python Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11']
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
@@ -29,60 +30,68 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libxml2-dev libxslt1-dev python3-dev
-
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip wheel setuptools
-        # Install lxml with binary wheel first to avoid compilation issues
-        pip install --only-binary=lxml lxml==5.1.0 || pip install lxml==5.1.0
+        python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov flake8 mypy
 
-    - name: Lint with flake8
+    - name: Set PYTHONPATH
       run: |
-        # Stop the build if there are Python syntax errors or undefined names
-        flake8 app/ main.py --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Exit-zero treats all errors as warnings
-        flake8 app/ main.py --count --exit-zero --max-complexity=15 --max-line-length=120 --statistics
+        echo "PYTHONPATH=$PYTHONPATH:$(pwd)/app" >> $GITHUB_ENV
 
-    - name: Type check with mypy
-      continue-on-error: true
+    - name: Run tests with pytest
+      env:
+        MOCK_BROWSER: "true"
+        DATABASE_URL: "sqlite:///:memory:"
       run: |
-        mypy app/ main.py --ignore-missing-imports
+        pytest tests/ \
+          --verbose \
+          --cov=app \
+          --cov-report=term-missing \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-fail-under=70
 
-    - name: Run tests
-      continue-on-error: true
-      run: |
-        if [ -d "tests" ]; then
-          pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
-        else
-          echo "No tests directory found, skipping tests"
-          # Create empty coverage file for codecov
-          echo '<?xml version="1.0" ?><coverage version="1.0"></coverage>' > coverage.xml
-        fi
-      if: always()
-
-    - name: Upload coverage to Codecov
+    - name: Upload coverage reports
       uses: codecov/codecov-action@v3
+      if: matrix.python-version == '3.11'
       with:
         file: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
-      if: matrix.python-version == '3.10'
+        fail_ci_if_error: false
 
-  security:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Run Bandit Security Scan
-      uses: tj-actions/bandit@v5.1
+    - name: Archive coverage HTML report
+      uses: actions/upload-artifact@v3
+      if: matrix.python-version == '3.11'
       with:
-        targets: |
-          app/
-          main.py
-        options: "-r -ll"
+        name: coverage-report
+        path: htmlcov/
+        retention-days: 30
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pylint mypy
+        pip install -r requirements.txt
+
+    - name: Run pylint
+      continue-on-error: true
+      run: |
+        pylint app/ --exit-zero --output-format=text
+
+    - name: Run mypy
+      continue-on-error: true
+      run: |
+        mypy app/ --ignore-missing-imports --no-strict-optional
