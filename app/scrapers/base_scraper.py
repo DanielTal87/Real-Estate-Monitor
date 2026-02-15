@@ -244,23 +244,45 @@ class BaseScraper(ABC):
         # Check for Chinese disconnection message or common connection errors
         disconnection_indicators = [
             "与页面的连接已断开",  # Chinese: "Connection to page has been disconnected"
+            "断开",  # Chinese: "disconnected"
             "disconnected",
             "connection lost",
             "target closed",
             "session not created",
             "cannot connect to",
+            "connection refused",
+            "connection reset",
         ]
 
         for indicator in disconnection_indicators:
             if indicator in error_str:
                 logger.error(
-                    f"[{self.source_name}] ❌ Browser connection lost. "
-                    f"Please ensure Chrome is open on port {settings.chrome_debug_port}."
+                    f"[{self.source_name}] ❌ Browser connection lost. Stopping scraper run."
                 )
                 self.browser_alive = False
                 return True
 
         return False
+
+    def _is_browser_alive(self) -> bool:
+        """
+        Check if browser connection is still alive.
+        Returns True if browser is connected, False otherwise.
+        """
+        if not self.page:
+            return False
+
+        try:
+            # Try to check if page is alive using a simple property access
+            _ = self.page.title
+            return True
+        except Exception as e:
+            # Check if this is a disconnection error
+            if self._check_browser_connection(e):
+                return False
+            # Other errors don't necessarily mean disconnection
+            logger.debug(f"[{self.source_name}] Error checking browser status: {e}")
+            return True  # Assume alive unless proven disconnected
 
     def random_delay(self, min_seconds: float = 1.0, max_seconds: float = 3.0):
         """Add random delay to appear human-like"""
@@ -532,7 +554,7 @@ class BaseScraper(ABC):
                 # Refresh page content and check again
                 try:
                     self.page.refresh()
-                    time.sleep(2)  # Wait for page to load
+                    time.sleep(settings.captcha_page_load_wait)  # Wait for page to load
 
                     # Re-check using _check_for_captcha() method
                     if not self._check_for_captcha():
@@ -625,6 +647,13 @@ class ScraperWithRetry:
                 logger.debug(f"[Scraper Retry] Initializing browser, source: {source}")
                 self.scraper.initialize()
 
+                # Check if browser is alive before starting scrape
+                if not self.scraper._is_browser_alive():
+                    logger.error(f"[Scraper Retry] ❌ Browser not alive, aborting scrape for {source}")
+                    error_msg = "Browser connection not available"
+                    self.scraper.update_scraping_state(success=False, error_msg=error_msg)
+                    return []
+
                 logger.info(f"[Scraper Retry] Executing scrape, source: {source}")
                 listings = self.scraper.scrape()
 
@@ -672,7 +701,7 @@ class ScraperWithRetry:
                         if self.shutdown_event and self.shutdown_event.is_set():
                             logger.info(f"[Scraper Retry] Shutdown signal received during retry delay for {source}")
                             return []
-                        time.sleep(1)
+                        time.sleep(settings.shutdown_check_interval)
 
         # All retries failed
         error_msg = f"Failed after {self.max_retries} attempts: {last_error}"

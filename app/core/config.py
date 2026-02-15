@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # Captcha Logic
     captcha_check_interval: int = Field(default=30, env="CAPTCHA_CHECK_INTERVAL")
     captcha_timeout_minutes: int = Field(default=30, env="CAPTCHA_TIMEOUT_MINUTES")
+    captcha_page_load_wait: int = Field(default=2, env="CAPTCHA_PAGE_LOAD_WAIT")
+
+    # Shutdown Logic
+    shutdown_check_interval: int = Field(default=1, env="SHUTDOWN_CHECK_INTERVAL")
 
     # Deal Score Logic
     min_deal_score_for_noti: float = Field(default=80, env="MIN_DEAL_SCORE_FOR_NOTI")
