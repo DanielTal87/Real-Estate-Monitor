@@ -87,19 +87,42 @@ class BaseScraper(ABC):
                 self.page = ChromiumPage(addr_or_opts=debug_address)
                 logger.info(f"[{self.source_name}] ✅ Successfully connected to existing Chrome instance")
 
-            except Exception as conn_error:
+            except ConnectionError as conn_error:
                 # Provide helpful error message if connection fails
                 user_data_dir = settings.chrome_user_data_dir.replace("~", "$HOME")
                 error_msg = (
-                    f"❌ Action Required: Start Chrome with remote debugging port {settings.chrome_debug_port}\n\n"
+                    f"FATAL: Chrome not found on port {settings.chrome_debug_port}. "
+                    f"Please start Chrome with remote debugging.\n\n"
                     f"macOS Command:\n"
-                    f'/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome '
+                    f'"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" '
+                    f'--remote-debugging-port={settings.chrome_debug_port} '
+                    f'--user-data-dir="{user_data_dir}"\n\n'
+                    f"Linux Command:\n"
+                    f'google-chrome '
+                    f'--remote-debugging-port={settings.chrome_debug_port} '
+                    f'--user-data-dir="{user_data_dir}"\n\n'
+                    f"Windows Command:\n"
+                    f'"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" '
+                    f'--remote-debugging-port={settings.chrome_debug_port} '
+                    f'--user-data-dir="%USERPROFILE%\\chrome_bot_profile"\n\n'
+                    f"Error: {conn_error}"
+                )
+                logger.error(f"[{self.source_name}] {error_msg}")
+                raise ConnectionError(error_msg) from conn_error
+            except Exception as conn_error:
+                # Generic connection error
+                user_data_dir = settings.chrome_user_data_dir.replace("~", "$HOME")
+                error_msg = (
+                    f"FATAL: Chrome not found on port {settings.chrome_debug_port}. "
+                    f"Please start Chrome with remote debugging.\n\n"
+                    f"macOS Command:\n"
+                    f'"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" '
                     f'--remote-debugging-port={settings.chrome_debug_port} '
                     f'--user-data-dir="{user_data_dir}"\n\n'
                     f"Error: {conn_error}"
                 )
                 logger.error(f"[{self.source_name}] {error_msg}")
-                raise ConnectionError(error_msg)
+                raise ConnectionError(error_msg) from conn_error
 
             # Inject anti-detection scripts (still useful even with persistent browser)
             self._inject_anti_detection_scripts()
@@ -109,6 +132,9 @@ class BaseScraper(ABC):
             # Load cookies if available
             self._load_cookies()
 
+        except ConnectionError:
+            # Re-raise connection errors as-is
+            raise
         except Exception as e:
             logger.error(f"[{self.source_name}] Failed to initialize browser: {e}")
             raise
@@ -349,10 +375,11 @@ class BaseScraper(ABC):
 
         self.db.commit()
 
-    def _is_blocked(self) -> bool:
+    def _check_for_captcha(self) -> bool:
         """
-        Detect if the page is blocked by anti-bot protection.
-        Returns True if blocked, False otherwise.
+        Check if the page contains a CAPTCHA or anti-bot protection.
+        Scans for common anti-bot indicators.
+        Returns True if CAPTCHA/anti-bot detected, False otherwise.
         """
         if not self.page:
             return False
@@ -362,45 +389,68 @@ class BaseScraper(ABC):
             page_title = self.page.title.lower() if self.page.title else ""
             page_html = self.page.html.lower() if self.page.html else ""
 
-            # Common anti-bot indicators
+            # Common anti-bot indicators (expanded list)
             anti_bot_indicators = [
-                "shieldsquare",
                 "perimeterx",
-                "security check",
+                "shieldsquare",
                 "אבטחת אתר",  # Hebrew: "Site security"
+                "security check",
                 "captcha",
                 "recaptcha",
+                "hcaptcha",
                 "cloudflare",
                 "access denied",
                 "blocked",
                 "bot detection",
                 "human verification",
-                "verify you are human"
+                "verify you are human",
+                "please verify",
+                "are you a robot",
+                "unusual traffic",
+                "suspicious activity",
+                "px-captcha",  # PerimeterX specific
+                "challenge-platform",  # Cloudflare
+                "_pxCaptcha",  # PerimeterX
             ]
 
             # Check if any indicator is present
             for indicator in anti_bot_indicators:
                 if indicator in page_title or indicator in page_html:
-                    logger.warning(f"[{self.source_name}] 🚨 Anti-bot protection detected: '{indicator}'")
+                    logger.warning(f"[{self.source_name}] 🚨 CAPTCHA/Anti-bot detected: '{indicator}'")
                     return True
 
             return False
 
         except Exception as e:
-            logger.warning(f"[{self.source_name}] Error checking if blocked: {e}")
+            logger.warning(f"[{self.source_name}] Error checking for CAPTCHA: {e}")
             return False
+
+    def _is_blocked(self) -> bool:
+        """
+        Detect if the page is blocked by anti-bot protection.
+        Alias for _check_for_captcha() for backward compatibility.
+        Returns True if blocked, False otherwise.
+        """
+        return self._check_for_captcha()
 
     def _handle_anti_bot_protection(self):
         """
         Detect and handle anti-bot protection (CAPTCHA, security checks, etc.)
         Pauses execution and waits for manual intervention if detected.
+
+        The Loop:
+        1. Detects CAPTCHA using _check_for_captcha()
+        2. Logs: "🚨 CAPTCHA DETECTED. Waiting for human solution in Chrome window..."
+        3. Sets global state: captcha_state.is_blocked = True
+        4. Enters while loop that sleeps for CAPTCHA_CHECK_INTERVAL
+        5. Exits loop ONLY if CAPTCHA is solved OR CAPTCHA_TIMEOUT_MINUTES is reached
         """
         if not self.page:
             return
 
         try:
             # Check if page is blocked
-            detected = self._is_blocked()
+            detected = self._check_for_captcha()
 
             if not detected:
                 # If we were waiting and now it's clear, reset state
@@ -410,7 +460,10 @@ class BaseScraper(ABC):
                 return
 
             # Anti-bot protection detected - enter wait loop
-            logger.warning(f"[{self.source_name}] ⚠️ CAPTCHA Detected! Pausing for user intervention...")
+            logger.warning(
+                f"[{self.source_name}] 🚨 CAPTCHA DETECTED. "
+                f"Waiting for human solution in Chrome window..."
+            )
             captcha_state.set_waiting(self.source_name)
 
             # Wait loop
@@ -448,8 +501,8 @@ class BaseScraper(ABC):
                     self.page.refresh()
                     time.sleep(2)  # Wait for page to load
 
-                    # Re-check using _is_blocked() method
-                    if not self._is_blocked():
+                    # Re-check using _check_for_captcha() method
+                    if not self._check_for_captcha():
                         # CAPTCHA solved!
                         elapsed = (datetime.utcnow() - start_time).total_seconds() / 60
                         logger.info(
@@ -459,12 +512,24 @@ class BaseScraper(ABC):
                         captcha_state.set_normal()
                         return
 
+                except ConnectionError as conn_err:
+                    # Chrome window was closed
+                    error_msg = (
+                        f"FATAL: Chrome not found on port {settings.chrome_debug_port}. "
+                        f"Please start Chrome with remote debugging."
+                    )
+                    logger.error(f"[{self.source_name}] {error_msg}")
+                    captcha_state.set_normal()
+                    raise ConnectionError(error_msg) from conn_err
                 except Exception as check_error:
                     logger.warning(f"[{self.source_name}] Error checking CAPTCHA status: {check_error}")
                     # Continue waiting
 
         except TimeoutError:
             # Re-raise timeout errors
+            raise
+        except ConnectionError:
+            # Re-raise connection errors
             raise
         except Exception as e:
             logger.error(f"[{self.source_name}] Error in anti-bot protection handler: {e}")
