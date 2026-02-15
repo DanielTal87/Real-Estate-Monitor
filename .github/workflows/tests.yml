@@ -1,11 +1,11 @@
-name: CI/CD Pipeline
+name: Tests
 
 on:
   push:
     branches: [ main, master, develop ]
   pull_request:
     branches: [ main, master, develop ]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,12 +14,12 @@ permissions:
 
 jobs:
   test:
-    name: Tests (Python ${{ matrix.python-version }})
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # Prevent hanging jobs
+    timeout-minutes: 15
 
     strategy:
-      fail-fast: false  # Continue testing other versions if one fails
+      fail-fast: false
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
 
@@ -30,7 +30,7 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip'  # Built-in pip caching
+        cache: 'pip'
 
     - name: Install system dependencies
       run: |
@@ -80,7 +80,7 @@ jobs:
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
-        token: ${{ secrets.CODECOV_TOKEN }}  # Required for v4
+        token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Archive coverage HTML report
       uses: actions/upload-artifact@v4
@@ -179,77 +179,3 @@ jobs:
             console.log('Failed to post PR comment:', error.message);
             console.log('This is expected for PRs from forks due to security restrictions');
           }
-
-  lint:
-    name: Code Quality & Linting
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pylint mypy ruff
-        pip install -r requirements.txt
-
-    - name: Run ruff (fast linter)
-      continue-on-error: true
-      run: |
-        ruff check app/ --output-format=github
-
-    - name: Run pylint
-      continue-on-error: true
-      run: |
-        pylint app/ --exit-zero --output-format=colorized --score=yes
-
-    - name: Run mypy
-      continue-on-error: true
-      run: |
-        mypy app/ --ignore-missing-imports --no-strict-optional --pretty
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install safety bandit
-
-    - name: Check for security vulnerabilities in dependencies
-      continue-on-error: true
-      run: |
-        safety check --json || true
-
-    - name: Run bandit security scan
-      continue-on-error: true
-      run: |
-        bandit -r app/ -f json -o bandit-report.json || true
-        bandit -r app/ -f screen
-
-    - name: Upload security reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: security-reports
-        path: |
-          bandit-report.json
-        retention-days: 30
