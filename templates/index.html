@@ -336,22 +336,30 @@
             }
         }
 
-        // Check CAPTCHA status
+        // Check CAPTCHA status using both endpoints
         async function checkCaptchaStatus() {
             try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
+                // Use the new /api/health endpoint
+                const healthResponse = await fetch('/api/health');
+                const healthData = await healthResponse.json();
+
+                // Also get detailed status
+                const statusResponse = await fetch('/api/status');
+                const statusData = await statusResponse.json();
 
                 const banner = document.getElementById('captcha-banner');
 
-                if (data.is_paused && data.captcha.status === 'WAITING_FOR_CAPTCHA') {
+                // Check if blocked using new endpoint
+                if (healthData.is_blocked || (statusData.is_paused && statusData.captcha.status === 'WAITING_FOR_CAPTCHA')) {
                     // Show banner
                     banner.classList.remove('d-none');
+                    banner.classList.remove('alert-warning');
+                    banner.classList.add('alert-danger');
 
                     // Update details
-                    document.getElementById('captcha-source').textContent = data.captcha.source || 'Unknown';
+                    document.getElementById('captcha-source').textContent = statusData.captcha.source || 'Unknown';
                     document.getElementById('captcha-elapsed').textContent =
-                        (data.captcha.elapsed_minutes || 0).toFixed(1);
+                        (statusData.captcha.elapsed_minutes || 0).toFixed(1);
                 } else {
                     // Hide banner
                     banner.classList.add('d-none');

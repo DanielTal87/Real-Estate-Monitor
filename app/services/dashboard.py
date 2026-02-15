@@ -356,6 +356,32 @@ async def health_check(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/api/health")
+async def api_health_check(db: Session = Depends(get_db)):
+    """API health check endpoint with CAPTCHA state and last run info"""
+    from app.core.database import ScrapingState
+    from app.scrapers.base_scraper import captcha_state
+
+    # Get CAPTCHA state
+    is_blocked = captcha_state.is_waiting()
+    captcha_info = captcha_state.get_status()
+
+    # Get most recent scrape time across all sources
+    states = db.query(ScrapingState).all()
+    last_run = None
+    for state in states:
+        if state.last_scrape_time:
+            if last_run is None or state.last_scrape_time > last_run:
+                last_run = state.last_scrape_time
+
+    return {
+        "is_blocked": is_blocked,
+        "last_run": last_run.isoformat() if last_run else None,
+        "captcha_state": captcha_info,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
 @app.get("/api/status")
 async def get_scraper_status():
     """Get current scraper status including CAPTCHA state"""

@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     headless: bool = Field(default=False, env="HEADLESS")
 
     # Scraping Behavior
+    scraper_polling_interval: int = Field(default=15, env="SCRAPER_POLLING_INTERVAL")
     default_max_scrolls: int = Field(default=5, env="DEFAULT_MAX_SCROLLS")
     min_wait_after_scroll: float = Field(default=2.0, env="MIN_WAIT_AFTER_SCROLL")
     max_wait_after_scroll: float = Field(default=5.0, env="MAX_WAIT_AFTER_SCROLL")

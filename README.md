@@ -31,15 +31,35 @@ Scrapes, analyzes, and notifies you about apartment listings from **Yad2**, **Ma
 
 ## 🚀 Quick Start (5 Minutes)
 
-### Step 0: Start Chrome in Debug Mode (macOS - Required!)
+### Step 0: Start Chrome in Debug Mode (Required!)
 
 **IMPORTANT:** The scraper now runs in **Persistent Browser Mode** to handle anti-bot protections. You must start Chrome with remote debugging enabled **before** running the application.
 
+#### macOS Setup
+
 ```bash
 # Open a new terminal and run this command:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/chrome_bot_profile"
+```
+
+#### Linux Setup
+
+```bash
+# Open a new terminal and run this command:
+google-chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/chrome_bot_profile"
+```
+
+#### Windows Setup
+
+```powershell
+# Open PowerShell or Command Prompt and run:
+"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 ^
+  --user-data-dir="%USERPROFILE%\chrome_bot_profile"
 ```
 
 **Configuration:** You can customize these settings in your `.env` file:
@@ -48,6 +68,9 @@ Scrapes, analyzes, and notifies you about apartment listings from **Yad2**, **Ma
 CHROME_DEBUG_PORT=9222                    # Change the debug port
 CHROME_USER_DATA_DIR=~/chrome_bot_profile # Change the profile directory
 HEADLESS=false                            # Set to true for headless mode (not recommended for CAPTCHA)
+CAPTCHA_CHECK_INTERVAL=30                 # Seconds between checking if CAPTCHA is solved
+CAPTCHA_TIMEOUT_MINUTES=30                # Max wait time for CAPTCHA resolution
+SCRAPER_POLLING_INTERVAL=15               # Minutes between scrape runs
 ```
 
 **What this does:**
@@ -498,8 +521,8 @@ Real-Estate-Monitor/
 If you see an error like "Action Required: Start Chrome with remote debugging port 9222":
 
 ```bash
-# 1. Make sure Chrome is running with debug mode:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+# 1. Make sure Chrome is running with debug mode (macOS):
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/chrome_bot_profile"
 
@@ -510,8 +533,8 @@ lsof -i :9222
 CHROME_DEBUG_PORT=9223
 CHROME_USER_DATA_DIR=~/chrome_bot_profile
 
-# Then restart Chrome with the new port:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+# Then restart Chrome with the new port (macOS):
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9223 \
   --user-data-dir="$HOME/chrome_bot_profile"
 ```
