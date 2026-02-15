@@ -36,7 +36,9 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade pip wheel setuptools
+        # Install lxml with binary wheel first to avoid compilation issues
+        pip install --only-binary=lxml lxml==5.1.0 || pip install lxml==5.1.0
         pip install -r requirements.txt
         pip install pytest pytest-cov flake8 mypy
 
