@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  security:
+  Security:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 10

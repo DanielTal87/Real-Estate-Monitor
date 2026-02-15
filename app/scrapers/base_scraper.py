@@ -639,6 +639,11 @@ class ScraperWithRetry:
             except Exception as e:
                 last_error = e
 
+                # Check for shutdown signal immediately after exception
+                if self.shutdown_event and self.shutdown_event.is_set():
+                    logger.info(f"[Scraper Retry] Shutdown detected, cancelling retries for {source}")
+                    return []
+
                 # Check if this is a browser disconnection error
                 if self.scraper._check_browser_connection(e):
                     # Browser disconnected - stop retrying immediately

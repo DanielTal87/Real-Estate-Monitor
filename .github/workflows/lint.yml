@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  Linting:
     name: Linting & Type Checking
     runs-on: ubuntu-latest
     timeout-minutes: 10
