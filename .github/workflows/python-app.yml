@@ -5,14 +5,17 @@ on:
     branches: [ main, master, develop ]
   pull_request:
     branches: [ main, master, develop ]
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # Prevent hanging jobs
 
     strategy:
+      fail-fast: false  # Continue testing other versions if one fails
       matrix:
-        python-version: ['3.9', '3.10', '3.11']
+        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
     - uses: actions/checkout@v3
@@ -21,14 +24,7 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-
-    - name: Cache pip packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+        cache: 'pip'  # Built-in pip caching
 
     - name: Install system dependencies
       run: |
@@ -37,50 +33,65 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        python -m pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
 
     - name: Set PYTHONPATH
       run: |
         echo "PYTHONPATH=$PYTHONPATH:$(pwd)/app" >> $GITHUB_ENV
 
-    - name: Run tests with pytest
+    - name: Run unit tests
+      env:
+        MOCK_BROWSER: "true"
+        DATABASE_URL: "sqlite:///:memory:"
+      run: |
+        pytest tests/unit/ \
+          --verbose \
+          --cov=app \
+          --cov-report=term-missing \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-fail-under=35 \
+          -m "not slow"
+
+    - name: Run integration tests
+      if: matrix.python-version == '3.11'
       env:
         MOCK_BROWSER: "true"
         DATABASE_URL: "sqlite:///:memory:"
       run: |
         pytest tests/ \
           --verbose \
-          --cov=app \
-          --cov-report=term-missing \
-          --cov-report=xml \
-          --cov-report=html \
-          --cov-fail-under=35
+          -m "integration or slow" \
+          --maxfail=3
 
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
       if: matrix.python-version == '3.11'
       with:
         file: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}  # Required for v4
 
     - name: Archive coverage HTML report
       uses: actions/upload-artifact@v4
       if: matrix.python-version == '3.11'
       with:
-        name: coverage-report
+        name: coverage-report-py${{ matrix.python-version }}
         path: htmlcov/
         retention-days: 30
 
-    - name: Generate coverage badge
-      if: matrix.python-version == '3.11' && github.event_name == 'push'
+    - name: Generate test summary
+      if: always()
       run: |
-        COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(root.attrib['line-rate'])")
-        COVERAGE_PCT=$(python -c "print(f'{float('$COVERAGE') * 100:.1f}')")
-        echo "Coverage: ${COVERAGE_PCT}%"
-        echo "COVERAGE_PCT=${COVERAGE_PCT}" >> $GITHUB_ENV
+        echo "## Test Results - Python ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ -f coverage.xml ]; then
+          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(f\"{float(root.attrib['line-rate']) * 100:.1f}\")")
+          echo "**Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+        fi
 
     - name: Comment PR with coverage
       uses: actions/github-script@v7
@@ -100,7 +111,7 @@ jobs:
           <details>
           <summary>📊 View detailed coverage report</summary>
 
-          Download the \`coverage-report\` artifact from the workflow run to view the full HTML report.
+          Download the \`coverage-report-py3.11\` artifact from the workflow run to view the full HTML report.
 
           </details>
 
@@ -116,6 +127,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@v3
@@ -124,19 +136,63 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+        cache: 'pip'
 
-    - name: Install linting tools
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pylint mypy
+        pip install pylint mypy ruff
         pip install -r requirements.txt
+
+    - name: Run ruff (fast linter)
+      continue-on-error: true
+      run: |
+        ruff check app/ --output-format=github
 
     - name: Run pylint
       continue-on-error: true
       run: |
-        pylint app/ --exit-zero --output-format=text
+        pylint app/ --exit-zero --output-format=colorized --score=yes
 
     - name: Run mypy
       continue-on-error: true
       run: |
-        mypy app/ --ignore-missing-imports --no-strict-optional
+        mypy app/ --ignore-missing-imports --no-strict-optional --pretty
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+
+    - name: Check for security vulnerabilities in dependencies
+      continue-on-error: true
+      run: |
+        safety check --json || true
+
+    - name: Run bandit security scan
+      continue-on-error: true
+      run: |
+        bandit -r app/ -f json -o bandit-report.json || true
+        bandit -r app/ -f screen
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+        retention-days: 30
