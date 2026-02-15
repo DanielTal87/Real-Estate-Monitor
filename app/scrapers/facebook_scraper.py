@@ -56,6 +56,9 @@ class FacebookScraper(BaseScraper):
             # Wait for page to settle
             self.random_delay(2, 3)
 
+            # Check for anti-bot protection (CAPTCHA, etc.)
+            self._handle_anti_bot_protection()
+
             # Longer initial delay to let anti-bot scripts run
             self.random_delay(4, 7)
             logger.debug("[Facebook Scraper] Initial delay completed")

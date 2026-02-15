@@ -356,6 +356,20 @@ async def health_check(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/api/status")
+async def get_scraper_status():
+    """Get current scraper status including CAPTCHA state"""
+    from app.scrapers.base_scraper import captcha_state
+
+    captcha_info = captcha_state.get_status()
+
+    return {
+        "captcha": captcha_info,
+        "is_paused": captcha_state.is_waiting(),
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
 @app.get("/api/db-stats")
 async def database_stats(db: Session = Depends(get_db)):
     """Get detailed database statistics for monitoring"""

@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # Facebook
     facebook_cookies_file: str = Field(default="facebook_cookies.json", env="FACEBOOK_COOKIES_FILE")
 
+    # Persistent Browser Mode (Anti-Bot Protection)
+    chrome_debug_port: int = Field(default=9222, env="CHROME_DEBUG_PORT")
+    captcha_check_interval: int = Field(default=30, env="CAPTCHA_CHECK_INTERVAL")
+    captcha_timeout_minutes: int = Field(default=30, env="CAPTCHA_TIMEOUT_MINUTES")
+
     # Logging
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     log_file: str = Field(default="real_estate_monitor.log", env="LOG_FILE")

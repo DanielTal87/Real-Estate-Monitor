@@ -4,15 +4,66 @@ from typing import List, Dict, Optional
 import time
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.core.database import Listing, ScrapingState
 from sqlalchemy.orm import Session
 import json
 import os
 
 from app.utils.phone_normalizer import normalize_israeli_phone
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Global CAPTCHA state singleton
+class CaptchaState:
+    """Singleton to track CAPTCHA status across all scrapers"""
+    _instance = None
+    _status = "NORMAL"  # NORMAL, WAITING_FOR_CAPTCHA
+    _waiting_since = None
+    _source = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(CaptchaState, cls).__new__(cls)
+        return cls._instance
+
+    def set_waiting(self, source: str):
+        """Set status to waiting for CAPTCHA"""
+        self._status = "WAITING_FOR_CAPTCHA"
+        self._waiting_since = datetime.utcnow()
+        self._source = source
+        logger.warning(f"⚠️ CAPTCHA State: Set to WAITING (source: {source})")
+
+    def set_normal(self):
+        """Reset to normal status"""
+        self._status = "NORMAL"
+        self._waiting_since = None
+        self._source = None
+        logger.info("✅ CAPTCHA State: Reset to NORMAL")
+
+    def is_waiting(self) -> bool:
+        """Check if currently waiting for CAPTCHA"""
+        return self._status == "WAITING_FOR_CAPTCHA"
+
+    def get_status(self) -> Dict:
+        """Get current status as dictionary"""
+        return {
+            "status": self._status,
+            "waiting_since": self._waiting_since.isoformat() if self._waiting_since else None,
+            "source": self._source,
+            "elapsed_minutes": (datetime.utcnow() - self._waiting_since).total_seconds() / 60 if self._waiting_since else 0
+        }
+
+    def is_timeout(self) -> bool:
+        """Check if CAPTCHA wait has timed out"""
+        if not self._waiting_since:
+            return False
+        elapsed = datetime.utcnow() - self._waiting_since
+        return elapsed > timedelta(minutes=settings.captcha_timeout_minutes)
+
+# Global instance
+captcha_state = CaptchaState()
 
 
 class BaseScraper(ABC):
@@ -24,47 +75,36 @@ class BaseScraper(ABC):
         self.page: Optional[ChromiumPage] = None
 
     def initialize(self):
-        """Initialize browser with DrissionPage and enhanced anti-detection"""
+        """Initialize browser by connecting to existing Chrome instance on debug port"""
         try:
-            # Configure ChromiumOptions for stealth mode
-            co = ChromiumOptions()
+            # Connect to existing Chrome instance on the configured debug port
+            debug_address = f"127.0.0.1:{settings.chrome_debug_port}"
 
-            # Tell DrissionPage to launch a new browser, not connect to existing
-            co.auto_port()  # Automatically find an available port
+            logger.info(f"[{self.source_name}] Attempting to connect to Chrome on {debug_address}")
 
-            # Set user agent to mimic real browser
-            co.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            try:
+                # Connect to existing browser instead of launching new one
+                self.page = ChromiumPage(addr_or_opts=debug_address)
+                logger.info(f"[{self.source_name}] ✅ Successfully connected to existing Chrome instance")
 
-            # Set window size to appear like a real user
-            co.set_argument('--window-size=1920,1080')
-            co.set_argument('--start-maximized')
+            except Exception as conn_error:
+                # Provide helpful error message if connection fails
+                error_msg = (
+                    f"❌ Failed to connect to Chrome on port {settings.chrome_debug_port}.\n"
+                    f"Please start Chrome with remote debugging enabled:\n\n"
+                    f"macOS:\n"
+                    f'/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome '
+                    f'--remote-debugging-port={settings.chrome_debug_port} '
+                    f'--user-data-dir="$HOME/chrome-profile-bot"\n\n'
+                    f"Error: {conn_error}"
+                )
+                logger.error(f"[{self.source_name}] {error_msg}")
+                raise ConnectionError(error_msg)
 
-            # Disable automation flags
-            co.set_argument('--disable-blink-features=AutomationControlled')
-
-            # Additional stealth arguments
-            co.set_argument('--disable-dev-shm-usage')
-            co.set_argument('--no-sandbox')
-            co.set_argument('--disable-gpu')
-
-            # Set language and locale
-            co.set_argument('--lang=he-IL')
-            co.set_pref('intl.accept_languages', 'he-IL,he,en-US,en')
-
-            # Set additional preferences to appear more human-like
-            co.set_pref('credentials_enable_service', False)
-            co.set_pref('profile.password_manager_enabled', False)
-
-            # Initialize ChromiumPage with options (will launch new browser)
-            self.page = ChromiumPage(addr_or_opts=co)
-
-            # Set viewport
-            self.page.set.window.size(1920, 1080)
-
-            # Inject anti-detection scripts
+            # Inject anti-detection scripts (still useful even with persistent browser)
             self._inject_anti_detection_scripts()
 
-            logger.info(f"[{self.source_name}] DrissionPage browser initialized with stealth mode")
+            logger.info(f"[{self.source_name}] Browser connection established in persistent mode")
 
             # Load cookies if available
             self._load_cookies()
@@ -305,18 +345,131 @@ class BaseScraper(ABC):
 
         self.db.commit()
 
+    def _handle_anti_bot_protection(self):
+        """
+        Detect and handle anti-bot protection (CAPTCHA, security checks, etc.)
+        Pauses execution and waits for manual intervention if detected.
+        """
+        if not self.page:
+            return
+
+        try:
+            # Get page title and content for detection
+            page_title = self.page.title.lower() if self.page.title else ""
+            page_html = self.page.html.lower() if self.page.html else ""
+
+            # Common anti-bot indicators
+            anti_bot_indicators = [
+                "shieldsquare",
+                "perimeterx",
+                "security check",
+                "אבטחת אתר",  # Hebrew: "Site security"
+                "captcha",
+                "recaptcha",
+                "cloudflare",
+                "access denied",
+                "blocked",
+                "bot detection",
+                "human verification",
+                "verify you are human"
+            ]
+
+            # Check if any indicator is present
+            detected = False
+            for indicator in anti_bot_indicators:
+                if indicator in page_title or indicator in page_html:
+                    detected = True
+                    logger.warning(f"[{self.source_name}] 🚨 Anti-bot protection detected: '{indicator}'")
+                    break
+
+            if not detected:
+                # If we were waiting and now it's clear, reset state
+                if captcha_state.is_waiting():
+                    logger.info(f"[{self.source_name}] ✅ Anti-bot protection cleared! Resuming scraping...")
+                    captcha_state.set_normal()
+                return
+
+            # Anti-bot protection detected - enter wait loop
+            logger.warning(f"[{self.source_name}] ⚠️ CAPTCHA Detected! Pausing for user intervention...")
+            captcha_state.set_waiting(self.source_name)
+
+            # Wait loop
+            start_time = datetime.utcnow()
+            check_count = 0
+
+            while True:
+                check_count += 1
+
+                # Check for timeout
+                if captcha_state.is_timeout():
+                    elapsed = (datetime.utcnow() - start_time).total_seconds() / 60
+                    error_msg = (
+                        f"CAPTCHA timeout after {elapsed:.1f} minutes. "
+                        f"Please solve the CAPTCHA in the Chrome window and restart the scraper."
+                    )
+                    logger.error(f"[{self.source_name}] ❌ {error_msg}")
+                    captcha_state.set_normal()
+                    raise TimeoutError(error_msg)
+
+                # Log status every 5 checks
+                if check_count % 5 == 0:
+                    elapsed = (datetime.utcnow() - start_time).total_seconds() / 60
+                    logger.info(
+                        f"[{self.source_name}] ⏳ Still waiting for CAPTCHA resolution... "
+                        f"({elapsed:.1f}/{settings.captcha_timeout_minutes} minutes)"
+                    )
+
+                # Wait before checking again
+                logger.debug(f"[{self.source_name}] Sleeping {settings.captcha_check_interval}s before next check...")
+                time.sleep(settings.captcha_check_interval)
+
+                # Refresh page content and check again
+                try:
+                    self.page.refresh()
+                    time.sleep(2)  # Wait for page to load
+
+                    # Re-check for anti-bot indicators
+                    page_title = self.page.title.lower() if self.page.title else ""
+                    page_html = self.page.html.lower() if self.page.html else ""
+
+                    still_blocked = False
+                    for indicator in anti_bot_indicators:
+                        if indicator in page_title or indicator in page_html:
+                            still_blocked = True
+                            break
+
+                    if not still_blocked:
+                        # CAPTCHA solved!
+                        elapsed = (datetime.utcnow() - start_time).total_seconds() / 60
+                        logger.info(
+                            f"[{self.source_name}] ✅ CAPTCHA resolved after {elapsed:.1f} minutes! "
+                            f"Resuming scraping..."
+                        )
+                        captcha_state.set_normal()
+                        return
+
+                except Exception as check_error:
+                    logger.warning(f"[{self.source_name}] Error checking CAPTCHA status: {check_error}")
+                    # Continue waiting
+
+        except TimeoutError:
+            # Re-raise timeout errors
+            raise
+        except Exception as e:
+            logger.error(f"[{self.source_name}] Error in anti-bot protection handler: {e}")
+            # Don't block scraping on handler errors
+            captcha_state.set_normal()
+
     def cleanup(self):
-        """Clean up browser resources"""
+        """Clean up browser resources (but don't close the persistent browser)"""
         try:
             self._save_cookies()
         except Exception as e:
             logger.warning(f"Error saving cookies during cleanup: {e}")
 
-        try:
-            if self.page:
-                self.page.quit()
-        except Exception as e:
-            logger.warning(f"Error closing browser: {e}")
+        # DO NOT close the browser in persistent mode
+        # The browser stays open for the next scraping run
+        logger.info(f"[{self.source_name}] Cleanup complete (browser remains open in persistent mode)")
 
     @abstractmethod
     def scrape(self) -> List[Dict]:

@@ -66,6 +66,20 @@
         </div>
     </nav>
 
+    <!-- CAPTCHA Warning Banner -->
+    <div id="captcha-banner" class="alert alert-warning alert-dismissible fade show d-none" role="alert" style="margin: 0; border-radius: 0;">
+        <div class="container-fluid">
+            <h5 class="alert-heading">
+                <i class="bi bi-exclamation-triangle-fill"></i> ⚠️ Scraper Paused: CAPTCHA Detected
+            </h5>
+            <p class="mb-0">
+                Please solve the CAPTCHA in the open Chrome window to resume scraping.
+                <strong>Source:</strong> <span id="captcha-source">-</span> |
+                <strong>Waiting for:</strong> <span id="captcha-elapsed">-</span> minutes
+            </p>
+        </div>
+    </div>
+
     <div class="container-fluid">
         <!-- Statistics Cards -->
         <div class="row mb-4">
@@ -322,6 +336,31 @@
             }
         }
 
+        // Check CAPTCHA status
+        async function checkCaptchaStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                const banner = document.getElementById('captcha-banner');
+
+                if (data.is_paused && data.captcha.status === 'WAITING_FOR_CAPTCHA') {
+                    // Show banner
+                    banner.classList.remove('d-none');
+
+                    // Update details
+                    document.getElementById('captcha-source').textContent = data.captcha.source || 'Unknown';
+                    document.getElementById('captcha-elapsed').textContent =
+                        (data.captcha.elapsed_minutes || 0).toFixed(1);
+                } else {
+                    // Hide banner
+                    banner.classList.add('d-none');
+                }
+            } catch (error) {
+                console.error('Error checking CAPTCHA status:', error);
+            }
+        }
+
         // Update last update time
         function updateLastUpdateTime() {
             const now = new Date();
@@ -331,6 +370,10 @@
 
         // Update time every second
         setInterval(updateLastUpdateTime, 1000);
+
+        // Check CAPTCHA status every 10 seconds
+        setInterval(checkCaptchaStatus, 10000);
+        checkCaptchaStatus(); // Initial check
 
         // Auto-refresh every 5 minutes
         setTimeout(() => location.reload(), 5 * 60 * 1000);

@@ -31,6 +31,27 @@ Scrapes, analyzes, and notifies you about apartment listings from **Yad2**, **Ma
 
 ## 🚀 Quick Start (5 Minutes)
 
+### Step 0: Start Chrome in Debug Mode (macOS - Required!)
+
+**IMPORTANT:** The scraper now runs in **Persistent Browser Mode** to handle anti-bot protections. You must start Chrome with remote debugging enabled **before** running the application.
+
+```bash
+# Open a new terminal and run this command:
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir="$HOME/chrome-profile-bot"
+```
+
+**What this does:**
+- Opens Chrome with remote debugging on port 9222
+- Uses a separate profile (`chrome-profile-bot`) to avoid conflicts with your regular Chrome
+- Allows the scraper to connect to this browser instead of launching new instances
+- **Keep this Chrome window open** while the scraper is running
+
+**Benefits:**
+- ✅ Manual CAPTCHA solving when needed
+- ✅ Browser stays open between scraping runs
+- ✅ Better anti-bot evasion
+- ✅ Persistent cookies and session
+
 ### Step 1: Setup (2 minutes)
 
 ```bash
@@ -435,6 +456,40 @@ Real-Estate-Monitor/
 
 ## 🔧 Troubleshooting
 
+### Chrome Connection Failed
+
+If you see an error like "Failed to connect to Chrome on port 9222":
+
+```bash
+# 1. Make sure Chrome is running with debug mode:
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir="$HOME/chrome-profile-bot"
+
+# 2. Check if port 9222 is in use:
+lsof -i :9222
+
+# 3. If you want to use a different port, update .env:
+CHROME_DEBUG_PORT=9223
+
+# Then restart Chrome with the new port:
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9223 --user-data-dir="$HOME/chrome-profile-bot"
+```
+
+### CAPTCHA Detected
+
+When the scraper detects a CAPTCHA:
+
+1. **Dashboard shows warning banner**: "⚠️ Scraper Paused: CAPTCHA Detected"
+2. **Check the open Chrome window**: You'll see the CAPTCHA page
+3. **Solve it manually**: Complete the CAPTCHA in the browser
+4. **Scraper auto-resumes**: Once solved, scraping continues automatically
+5. **Timeout**: If not solved within 30 minutes (configurable), the scraper aborts
+
+**Configure CAPTCHA timeouts in `.env`:**
+```bash
+CAPTCHA_CHECK_INTERVAL=30        # Check every 30 seconds
+CAPTCHA_TIMEOUT_MINUTES=30       # Abort after 30 minutes
+```
+
 ### Application won't start
 
 ```bash
@@ -443,7 +498,6 @@ python --version
 
 # Reinstall dependencies
 pip install -r requirements.txt
-playwright install chromium
 
 # Check for errors
 tail -f real_estate_monitor.log
