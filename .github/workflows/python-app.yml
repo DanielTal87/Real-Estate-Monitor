@@ -7,6 +7,11 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:  # Allow manual trigger
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -51,7 +56,7 @@ jobs:
           --cov-report=term-missing \
           --cov-report=xml \
           --cov-report=html \
-          --cov-fail-under=35 \
+          --cov-fail-under=60 \
           -m "not slow"
 
     - name: Run integration tests
@@ -96,34 +101,43 @@ jobs:
     - name: Comment PR with coverage
       uses: actions/github-script@v7
       if: matrix.python-version == '3.11' && github.event_name == 'pull_request'
+      continue-on-error: true
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const fs = require('fs');
-          const coverage = fs.readFileSync('coverage.xml', 'utf8');
-          const match = coverage.match(/line-rate="([\d.]+)"/);
-          const coveragePct = match ? (parseFloat(match[1]) * 100).toFixed(1) : 'N/A';
 
-          const comment = `## 🧪 Test Results
+          try {
+            const coverage = fs.readFileSync('coverage.xml', 'utf8');
+            const match = coverage.match(/line-rate="([\d.]+)"/);
+            const coveragePct = match ? (parseFloat(match[1]) * 100).toFixed(1) : 'N/A';
 
-          **Coverage:** ${coveragePct}%
+            const comment = `## 🧪 Test Results
 
-          <details>
-          <summary>📊 View detailed coverage report</summary>
+            **Coverage:** ${coveragePct}%
 
-          Download the \`coverage-report-py3.11\` artifact from the workflow run to view the full HTML report.
+            <details>
+            <summary>📊 View detailed coverage report</summary>
 
-          </details>
+            Download the \`coverage-report-py3.11\` artifact from the workflow run to view the full HTML report.
 
-          ${coveragePct >= 35 ? '✅ Coverage threshold met (35%)' : '❌ Coverage below threshold (35%)'}
-          `;
+            </details>
 
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment
-          });
+            ${coveragePct >= 35 ? '✅ Coverage threshold met (35%)' : '❌ Coverage below threshold (35%)'}
+            `;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+            console.log('Successfully posted coverage comment to PR');
+          } catch (error) {
+            console.log('Failed to post PR comment:', error.message);
+            console.log('This is expected for PRs from forks due to security restrictions');
+          }
 
   lint:
     runs-on: ubuntu-latest
