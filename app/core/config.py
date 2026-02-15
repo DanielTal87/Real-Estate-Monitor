@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # Deal Score Logic
     min_deal_score_for_noti: float = Field(default=80, env="MIN_DEAL_SCORE_FOR_NOTI")
 
+    # Deal Score Weights (total should be 100)
+    deal_score_weight_price: float = Field(default=40.0, env="DEAL_SCORE_WEIGHT_PRICE")
+    deal_score_weight_features: float = Field(default=30.0, env="DEAL_SCORE_WEIGHT_FEATURES")
+    deal_score_weight_recency: float = Field(default=15.0, env="DEAL_SCORE_WEIGHT_RECENCY")
+    deal_score_weight_price_trend: float = Field(default=15.0, env="DEAL_SCORE_WEIGHT_PRICE_TREND")
+
     # Logging
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     log_file: str = Field(default="real_estate_monitor.log", env="LOG_FILE")

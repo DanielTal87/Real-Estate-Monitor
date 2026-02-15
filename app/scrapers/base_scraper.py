@@ -69,13 +69,18 @@ captcha_state = CaptchaState()
 class BaseScraper(ABC):
     """Base class for all scrapers with common functionality using DrissionPage"""
 
-    def __init__(self, db_session: Session, source_name: str):
+    def __init__(self, db_session: Session, source_name: str, page: Optional[ChromiumPage] = None):
         self.db = db_session
         self.source_name = source_name
-        self.page: Optional[ChromiumPage] = None
+        self.page: Optional[ChromiumPage] = page  # Allow injection of mock page
 
     def initialize(self):
         """Initialize browser by connecting to existing Chrome instance on debug port"""
+        # If page was injected (e.g., for testing), skip initialization
+        if self.page is not None:
+            logger.info(f"[{self.source_name}] Using injected page (likely for testing)")
+            return
+
         try:
             # Connect to existing Chrome instance on the configured debug port
             debug_address = f"127.0.0.1:{settings.chrome_debug_port}"
