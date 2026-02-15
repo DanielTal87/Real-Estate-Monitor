@@ -22,6 +22,7 @@ Scrapes, analyzes, and notifies you about apartment listings from **Yad2**, **Ma
 - [Telegram Setup](#-telegram-setup)
 - [Using the Dashboard](#-using-the-dashboard)
 - [How Deal Scoring Works](#-how-deal-scoring-works)
+- [Testing](#-testing)
 - [Project Structure](#-project-structure)
 - [Troubleshooting](#-troubleshooting)
 - [Advanced Features](#️-advanced-features)
@@ -474,6 +475,74 @@ Price change history:
 - **60-79**: 👍 Good listing - Worth considering
 - **40-59**: 😐 Average - Meets basic criteria
 - **Below 40**: 👎 Below expectations
+
+---
+
+## 🧪 Testing
+
+### Quick Start
+
+```bash
+# Run all tests with colored output and emojis
+pytest tests/
+
+# Run with coverage report
+pytest tests/ --cov=app --cov-report=html
+open htmlcov/index.html
+
+# Run specific test file
+pytest tests/unit/test_processor.py -v
+
+# Run tests matching a pattern
+pytest tests/ -k "deal_score" -v
+```
+
+### Test Suite Overview
+
+**169 tests total** - **159 passing** (94% pass rate)
+
+```
+tests/
+├── conftest.py                    # Shared fixtures & mocks
+├── unit/
+│   ├── test_processor.py          # Deal scoring & processing (40+ tests)
+│   ├── test_parsers.py            # Hebrew parsing (50+ tests)
+│   ├── test_duplicate_detector.py # Duplicate detection (12 tests)
+│   ├── test_listing_filter.py     # Filtering logic (17 tests)
+│   ├── test_config.py             # Configuration (18 tests)
+│   └── test_database.py           # Database models (10 tests)
+└── mocked_scrapers/
+    └── test_yad2_parser.py        # Yad2 scraper (22 tests)
+```
+
+### Coverage by Module
+
+- ✅ **100%**: config.py, duplicate_detector.py
+- ✅ **98%**: listing_filter.py
+- ✅ **93%**: phone_normalizer.py
+- ✅ **92%**: database.py
+- ✅ **87%**: yad2_scraper.py
+- 📊 **37% overall** (services not tested yet)
+
+### Key Features
+
+1. **No Browser Required** - All tests use mocked DrissionPage
+2. **Colored Output** - ✅ Green for pass, ❌ Red for fail
+3. **Parametrized Tests** - Comprehensive coverage with minimal code
+4. **Fast Execution** - ~90 seconds for full suite
+5. **CI/CD Ready** - Runs automatically on every push/PR
+
+### GitHub Actions
+
+Tests run automatically on:
+- Every push to `main`, `master`, `develop`
+- Every pull request
+- Python 3.9, 3.10, 3.11 matrix
+- Coverage threshold: 35%
+
+### Writing Tests
+
+See [`tests/README.md`](tests/README.md) for detailed examples and best practices.
 
 ---
 

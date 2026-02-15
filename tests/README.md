@@ -10,10 +10,14 @@ This test suite provides comprehensive testing for the Real Estate Monitor appli
 tests/
 ├── conftest.py                    # Shared fixtures and mocks
 ├── unit/
-│   ├── test_processor.py          # ListingProcessor & DealScoreCalculator tests
-│   └── test_parsers.py            # Regex parsing and data cleaning tests
+│   ├── test_processor.py          # Deal scoring & processing (40+ tests)
+│   ├── test_parsers.py            # Hebrew parsing (50+ tests)
+│   ├── test_duplicate_detector.py # Duplicate detection (12 tests)
+│   ├── test_listing_filter.py     # Filtering logic (17 tests)
+│   ├── test_config.py             # Configuration (18 tests)
+│   └── test_database.py           # Database models (10 tests)
 └── mocked_scrapers/
-    └── test_yad2_parser.py        # Yad2 scraper with mocked HTML
+    └── test_yad2_parser.py        # Yad2 scraper (22 tests)
 ```
 
 ## Running Tests

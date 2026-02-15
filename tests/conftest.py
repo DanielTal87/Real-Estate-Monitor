@@ -12,6 +12,19 @@ from app.core.database import Base, Listing, NeighborhoodStats
 from app.core.config import Settings
 
 
+# Custom pytest hook to add emojis to test results
+def pytest_report_teststatus(report, config):
+    """Add emojis to test output"""
+    if report.when == 'call':
+        if report.passed:
+            return report.outcome, '✅', f'✅ PASSED'
+        elif report.failed:
+            return report.outcome, '❌', f'❌ FAILED'
+        elif report.skipped:
+            return report.outcome, '⏭️', f'⏭️ SKIPPED'
+    return None
+
+
 @pytest.fixture(scope="session")
 def test_settings():
     """Create test settings with mock values"""
