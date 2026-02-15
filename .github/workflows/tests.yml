@@ -1,0 +1,209 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  Tests:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-dev libxslt-dev python3-dev libjpeg-dev zlib1g-dev
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r requirements.txt
+
+    - name: Set PYTHONPATH
+      run: |
+        echo "PYTHONPATH=$PYTHONPATH:$(pwd)/app" >> $GITHUB_ENV
+
+    - name: Run unit tests
+      env:
+        MOCK_BROWSER: "true"
+        DATABASE_URL: "sqlite:///:memory:"
+      run: |
+        pytest tests/unit/ \
+          --verbose \
+          --cov=app \
+          --cov-report=term-missing \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-fail-under=60 \
+          --junitxml=pytest-results.xml \
+          -m "not slow"
+
+    - name: Run integration tests
+      if: matrix.python-version == '3.11'
+      env:
+        MOCK_BROWSER: "true"
+        DATABASE_URL: "sqlite:///:memory:"
+      run: |
+        pytest tests/ \
+          --verbose \
+          -m "integration or slow" \
+          --maxfail=3
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Archive coverage HTML report
+      uses: actions/upload-artifact@v4
+      if: matrix.python-version == '3.11'
+      with:
+        name: coverage-report-py${{ matrix.python-version }}
+        path: htmlcov/
+        retention-days: 30
+
+    - name: Pytest coverage comment
+      uses: MishaKav/pytest-coverage-comment@main
+      if: matrix.python-version == '3.11' && github.event_name == 'pull_request'
+      continue-on-error: true
+      with:
+        pytest-coverage-path: ./coverage.xml
+        junitxml-path: ./pytest-results.xml
+        title: Coverage Report
+        badge-title: Coverage
+        hide-badge: false
+        hide-report: false
+        create-new-comment: false
+        hide-comment: false
+        report-only-changed-files: false
+        remove-link-from-badge: false
+
+    - name: Generate test summary
+      if: always()
+      run: |
+        echo "## Test Results - Python ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Parse test results from JUnit XML
+        if [ -f pytest-results.xml ]; then
+          python3 .github/scripts/parse_test_results.py >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Add coverage info
+        if [ -f coverage.xml ]; then
+          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(f\"{float(root.attrib['line-rate']) * 100:.1f}\")")
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Comment PR with coverage
+      uses: actions/github-script@v7
+      if: matrix.python-version == '3.11' && github.event_name == 'pull_request'
+      continue-on-error: true
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          const xml2js = require('xml2js');
+
+          try {
+            // Parse coverage data
+            const coverage = fs.readFileSync('coverage.xml', 'utf8');
+            const match = coverage.match(/line-rate="([\d.]+)"/);
+            const coveragePct = match ? (parseFloat(match[1]) * 100).toFixed(0) : 'N/A';
+
+            // Parse JUnit XML for test results
+            const junitXml = fs.readFileSync('pytest-results.xml', 'utf8');
+            const parser = new xml2js.Parser();
+            let testData = { tests: 0, skipped: 0, failures: 0, errors: 0, time: '0.0' };
+
+            parser.parseString(junitXml, (err, result) => {
+              if (!err && result.testsuite) {
+                const suite = result.testsuite.$;
+                testData = {
+                  tests: suite.tests || 0,
+                  skipped: suite.skipped || 0,
+                  failures: suite.failures || 0,
+                  errors: suite.errors || 0,
+                  time: parseFloat(suite.time || 0).toFixed(2)
+                };
+              }
+            });
+
+            // Determine coverage badge color
+            const badgeColor = coveragePct >= 70 ? 'brightgreen' : coveragePct >= 50 ? 'yellow' : 'red';
+            const thresholdMet = coveragePct >= 60 ? '✅ Coverage threshold met (60%)' : '⚠️ Coverage below threshold (60%)';
+
+            const comment = [
+              '## 🧪 Test Results',
+              '',
+              `![Coverage](https://img.shields.io/badge/Coverage-${coveragePct}%25-${badgeColor})`,
+              '',
+              '### 📊 Test Summary',
+              '',
+              '| Tests | Skipped | Failures | Errors | Time |',
+              '|-------|---------|----------|--------|------|',
+              `| ${testData.tests} | ${testData.skipped} 🦘 | ${testData.failures} ❌ | ${testData.errors} 🔥 | ${testData.time}s ⏱️ |`,
+              '',
+              '<details>',
+              '<summary>📈 View detailed coverage report</summary>',
+              '',
+              'Download the `coverage-report-py3.11` artifact from the workflow run to view the full HTML report.',
+              '',
+              '</details>',
+              '',
+              thresholdMet
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+            console.log('Successfully posted coverage comment to PR');
+          } catch (error) {
+            console.log('Failed to post PR comment:', error.message);
+            console.log('This is expected for PRs from forks due to security restrictions');
+          }
+
+    - name: Upload logs on failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: test-logs-py${{ matrix.python-version }}
+        path: |
+          *.log
+          debug_output/
+          pytest-results.xml
+        retention-days: 7
+        if-no-files-found: ignore

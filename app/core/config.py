@@ -69,9 +69,19 @@ class Settings(BaseSettings):
     # Captcha Logic
     captcha_check_interval: int = Field(default=30, env="CAPTCHA_CHECK_INTERVAL")
     captcha_timeout_minutes: int = Field(default=30, env="CAPTCHA_TIMEOUT_MINUTES")
+    captcha_page_load_wait: int = Field(default=2, env="CAPTCHA_PAGE_LOAD_WAIT")
+
+    # Shutdown Logic
+    shutdown_check_interval: int = Field(default=1, env="SHUTDOWN_CHECK_INTERVAL")
 
     # Deal Score Logic
     min_deal_score_for_noti: float = Field(default=80, env="MIN_DEAL_SCORE_FOR_NOTI")
+
+    # Deal Score Weights (total should be 100)
+    deal_score_weight_price: float = Field(default=40.0, env="DEAL_SCORE_WEIGHT_PRICE")
+    deal_score_weight_features: float = Field(default=30.0, env="DEAL_SCORE_WEIGHT_FEATURES")
+    deal_score_weight_recency: float = Field(default=15.0, env="DEAL_SCORE_WEIGHT_RECENCY")
+    deal_score_weight_price_trend: float = Field(default=15.0, env="DEAL_SCORE_WEIGHT_PRICE_TREND")
 
     # Logging
     log_level: str = Field(default="INFO", env="LOG_LEVEL")

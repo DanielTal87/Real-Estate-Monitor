@@ -46,8 +46,8 @@ def normalize_israeli_phone(phone: Optional[str]) -> Optional[str]:
     if len(digits) > 10 and digits.startswith('0'):
         digits = digits[:10]
 
-    # Validate length (Israeli mobile/landline numbers are 10 digits)
-    if len(digits) != 10:
+    # Validate length (Israeli mobile numbers are 10 digits, landlines can be 9)
+    if len(digits) not in [9, 10]:
         return None
 
     return digits

@@ -23,7 +23,8 @@ class TestSettings:
         cities = test_settings.get_cities_list()
 
         assert isinstance(cities, list)
-        assert len(cities) == 2
+        assert len(cities) == 3
+        assert 'תל אביב' in cities
         assert 'Tel Aviv' in cities
         assert 'Ramat Gan' in cities
 

@@ -17,24 +17,24 @@ class DealScoreCalculator:
         """
         Calculate deal score (0-100) for a listing
 
-        Scoring breakdown:
-        - Price competitiveness: 0-40 points
-        - Features match: 0-30 points
-        - Recency/freshness: 0-15 points
-        - Price trend: 0-15 points
+        Scoring breakdown (configurable via settings):
+        - Price competitiveness: 0-{price_weight} points
+        - Features match: 0-{features_weight} points
+        - Recency/freshness: 0-{recency_weight} points
+        - Price trend: 0-{trend_weight} points
         """
         score = 0.0
 
-        # 1. Price Competitiveness (0-40 points)
+        # 1. Price Competitiveness
         score += self._score_price_competitiveness(listing)
 
-        # 2. Features Match (0-30 points)
+        # 2. Features Match
         score += self._score_features(listing)
 
-        # 3. Recency (0-15 points)
+        # 3. Recency
         score += self._score_recency(listing)
 
-        # 4. Price Trend (0-15 points)
+        # 4. Price Trend
         score += self._score_price_trend(listing)
 
         return min(100.0, max(0.0, score))
@@ -44,6 +44,8 @@ class DealScoreCalculator:
         if not listing.price_per_sqm or listing.price_per_sqm <= 0:
             return 0.0
 
+        max_score = self.settings.deal_score_weight_price
+
         # Get neighborhood stats
         stats = self.db.query(NeighborhoodStats).filter(
             NeighborhoodStats.city == listing.city,
@@ -51,33 +53,33 @@ class DealScoreCalculator:
         ).first()
 
         if not stats or not stats.avg_price_per_sqm:
-            # No data, give neutral score
-            return 20.0
+            # No data, give neutral score (50% of max)
+            return max_score * 0.5
 
         # Calculate percentage difference
         avg_price = stats.avg_price_per_sqm
         price_ratio = listing.price_per_sqm / avg_price
 
-        # Score based on how much below average
+        # Score based on how much below average (percentage of max_score)
         if price_ratio <= 0.7:  # 30% below average
-            return 40.0
+            return max_score * 1.0
         elif price_ratio <= 0.8:  # 20% below average
-            return 35.0
+            return max_score * 0.875
         elif price_ratio <= 0.9:  # 10% below average
-            return 30.0
+            return max_score * 0.75
         elif price_ratio <= 1.0:  # At or slightly below average
-            return 25.0
+            return max_score * 0.625
         elif price_ratio <= 1.1:  # 10% above average
-            return 15.0
+            return max_score * 0.375
         elif price_ratio <= 1.2:  # 20% above average
-            return 10.0
+            return max_score * 0.25
         else:  # More than 20% above average
-            return 5.0
+            return max_score * 0.125
 
     def _score_features(self, listing: Listing) -> float:
         """Score based on matching user preferences"""
         score = 0.0
-        max_score = 30.0
+        max_score = self.settings.deal_score_weight_features
 
         features = []
 
@@ -93,10 +95,9 @@ class DealScoreCalculator:
         if self.settings.prefer_elevator:
             features.append(('elevator', listing.has_elevator, 7.0))
 
-        # Mamad - הוסף את זה
+        # Mamad
         if self.settings.prefer_mamad:
             features.append(('mamad', listing.has_mamad, 8.0))
-
 
         # Top floors preference
         if self.settings.prefer_top_floors and listing.floor and listing.total_floors:
@@ -114,57 +115,62 @@ class DealScoreCalculator:
 
     def _score_recency(self, listing: Listing) -> float:
         """Score based on how fresh the listing is"""
+        max_score = self.settings.deal_score_weight_recency
+
         if not listing.first_seen:
-            return 15.0  # New listing, give max score
+            return max_score  # New listing, give max score
 
         days_old = (datetime.utcnow() - listing.first_seen).days
 
         if days_old == 0:  # Today
-            return 15.0
+            return max_score * 1.0
         elif days_old <= 2:  # 1-2 days
-            return 12.0
+            return max_score * 0.8
         elif days_old <= 5:  # 3-5 days
-            return 9.0
+            return max_score * 0.6
         elif days_old <= 10:  # 6-10 days
-            return 6.0
+            return max_score * 0.4
         elif days_old <= 20:  # 11-20 days
-            return 3.0
+            return max_score * 0.2
         else:  # Over 20 days
-            return 1.0
+            return max_score * 0.067
 
     def _score_price_trend(self, listing: Listing) -> float:
         """Score based on price changes"""
+        max_score = self.settings.deal_score_weight_price_trend
+        neutral_score = max_score * 0.333  # 1/3 of max for neutral
+
         if not listing.price_history or len(listing.price_history) < 2:
-            return 5.0  # Neutral score for no history
+            return neutral_score  # Neutral score for no history
 
         # Get most recent price changes
         sorted_history = sorted(listing.price_history, key=lambda x: x.timestamp, reverse=True)
 
         if len(sorted_history) < 2:
-            return 5.0
+            return neutral_score
 
         current_price = sorted_history[0].price
         previous_price = sorted_history[1].price
 
         if not current_price or not previous_price or previous_price <= 0:
-            return 5.0
+            return neutral_score
 
         # Calculate price change percentage
         price_change_pct = ((current_price - previous_price) / previous_price) * 100
 
         # Score based on price drops
         if price_change_pct <= -10:  # 10%+ drop
-            return 15.0
+            return max_score * 1.0
         elif price_change_pct <= -5:  # 5-10% drop
-            return 12.0
+            return max_score * 0.8
         elif price_change_pct <= -2:  # 2-5% drop
-            return 9.0
+            return max_score * 0.6
         elif price_change_pct < 0:  # Any drop
-            return 7.0
+            return max_score * 0.467
         elif price_change_pct == 0:  # No change
-            return 5.0
+            return neutral_score
         else:  # Price increase
-            return 2.0
+            return max_score * 0.133
 
     def get_price_drop_percentage(self, listing: Listing) -> Optional[float]:
         """Get percentage of price drop if any"""
