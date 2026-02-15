@@ -97,7 +97,7 @@ git clone https://github.com/yourusername/Real-Estate-Monitor.git
 cd Real-Estate-Monitor
 
 # Run automated setup
-python3 setup.py
+python3 setup_project.py
 
 # Activate virtual environment
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -576,7 +576,7 @@ Real-Estate-Monitor/
 ├── .env                       # Your configuration (create from .env.example)
 ├── .env.example              # Configuration template
 ├── requirements.txt           # Python dependencies
-├── setup.py                   # Automated setup script
+├── setup_project.py           # Automated setup script
 ├── test_setup.py              # System tests
 └── add_test_listings.py       # Test data generator
 ```
