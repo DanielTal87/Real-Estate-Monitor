@@ -262,8 +262,8 @@ class Yad2Scraper(BaseScraper):
 
     def _extract_rooms(self, text: str) -> Optional[float]:
         """Extract number of rooms"""
-        # Look for patterns like "3 חדרים" or "3.5 חד'"
-        match = re.search(r'(\d+\.?\d*)\s*(?:חדרים|חד\'|rooms)', text)
+        # Look for patterns like "3 חדרים", "3.5 חד'", or "5 חד"
+        match = re.search(r'(\d+\.?\d*)\s*(?:חדרים|חד\'|חד|rooms)', text)
         if match:
             try:
                 return float(match.group(1))

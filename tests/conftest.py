@@ -33,10 +33,16 @@ def test_settings():
         database_url="sqlite:///:memory:",
 
         # Search criteria
-        cities="Tel Aviv,Ramat Gan",
+        cities="תל אביב,Tel Aviv,Ramat Gan",
         max_price=3000000,
         min_rooms=3.0,
         min_size_sqm=70,
+
+        # Deal breakers (set to False for tests to pass)
+        exclude_ground_floor=False,
+        require_elevator_above_floor=0,
+        require_parking=False,
+        require_mamad=False,
 
         # Preferences
         prefer_parking=True,
