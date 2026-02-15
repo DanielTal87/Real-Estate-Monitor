@@ -32,7 +32,7 @@ class Yad2Scraper(BaseScraper):
 
         return url
 
-    async def scrape(self) -> List[Dict]:
+    def scrape(self) -> List[Dict]:
         """Scrape Yad2 listings"""
         if not self.page:
             logger.error("[Yad2 Scraper] Browser page not initialized")
@@ -45,34 +45,50 @@ class Yad2Scraper(BaseScraper):
             search_url = self.build_search_url()
             logger.info(f"[Yad2 Scraper] Navigating to search page, url: {search_url}")
 
-            await self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            # Navigate to the page
+            self.page.get(search_url)
             logger.info("[Yad2 Scraper] Page loaded successfully")
 
-            await self.random_delay(2, 4)
-            logger.debug("[Yad2 Scraper] Random delay completed")
+            # Wait for page to settle
+            self.random_delay(2, 3)
 
-            # Scroll to load more results
+            # Longer initial delay to let anti-bot scripts run
+            self.random_delay(3, 6)
+            logger.debug("[Yad2 Scraper] Initial delay completed")
+
+            # Simulate human-like mouse movements
+            self.human_like_mouse_movement()
+            logger.debug("[Yad2 Scraper] Mouse movements simulated")
+
+            # Scroll to load more results with human-like behavior
             logger.info("[Yad2 Scraper] Scrolling page to load dynamic content, scrolls: 3")
-            await self.scroll_page(scrolls=3)
-            await self.random_delay(1, 2)
+            self.scroll_page(scrolls=3)
+            self.random_delay(2, 4)
 
             # Get listing cards - try multiple selectors as Yad2 changes frequently
             logger.info("[Yad2 Scraper] Attempting to find listing cards with selector: .feeditem")
-            listing_cards = await self.page.query_selector_all('.feeditem')
+            listing_cards = self.page.eles('.feeditem')
 
             if not listing_cards:
-                logger.info("[Yad2 Scraper] Primary selector failed, trying alternative: [class*=\"feed_item\"]")
-                listing_cards = await self.page.query_selector_all('[class*="feed_item"]')
+                logger.info("[Yad2 Scraper] Primary selector failed, trying alternative: css:[class*=\"feed_item\"]")
+                listing_cards = self.page.eles('css:[class*="feed_item"]')
 
             if not listing_cards:
-                logger.info("[Yad2 Scraper] Second selector failed, trying: [data-testid*=\"item\"]")
-                listing_cards = await self.page.query_selector_all('[data-testid*="item"]')
+                logger.info("[Yad2 Scraper] Second selector failed, trying: css:[data-testid*=\"item\"]")
+                listing_cards = self.page.eles('css:[data-testid*="item"]')
 
             if not listing_cards:
-                logger.info("[Yad2 Scraper] Third selector failed, trying generic: article, div[class*=\"item\"]")
-                listing_cards = await self.page.query_selector_all('article, div[class*="item"], div[class*="card"]')
+                logger.info("[Yad2 Scraper] Third selector failed, trying generic: article, css:div[class*=\"item\"]")
+                listing_cards = self.page.eles('tag:article')
+                if not listing_cards:
+                    listing_cards = self.page.eles('css:div[class*="item"]')
 
             logger.info(f"[Yad2 Scraper] Found listing cards, count: {len(listing_cards)}")
+
+            # Debug: Save page if no listings found
+            if len(listing_cards) == 0:
+                logger.warning("[Yad2 Scraper] No listing cards found - saving debug output")
+                self.debug_save_page("no_listings")
 
             # Process only first 20-30 newest listings per scrape
             max_listings = min(len(listing_cards), 30)
@@ -81,7 +97,7 @@ class Yad2Scraper(BaseScraper):
             for idx, card in enumerate(listing_cards[:30], 1):
                 try:
                     logger.debug(f"[Yad2 Scraper] Extracting listing data, index: {idx}/{max_listings}")
-                    listing_data = await self._extract_listing_data(card)
+                    listing_data = self._extract_listing_data(card)
                     if listing_data:
                         parsed = self.parse_listing(listing_data)
                         if parsed:
@@ -103,15 +119,15 @@ class Yad2Scraper(BaseScraper):
 
         return listings
 
-    async def _extract_listing_data(self, card) -> Optional[Dict]:
+    def _extract_listing_data(self, card) -> Optional[Dict]:
         """Extract data from a single listing card"""
         try:
             # Extract link and ID
-            link_element = await card.query_selector('a.feed_item')
+            link_element = card.ele('css:a.feed_item', timeout=2)
             if not link_element:
                 return None
 
-            href = await link_element.get_attribute('href')
+            href = link_element.link
             if not href:
                 return None
 
@@ -122,16 +138,16 @@ class Yad2Scraper(BaseScraper):
             external_id = id_match.group(1) if id_match else None
 
             # Extract title
-            title_element = await card.query_selector('.title')
-            title = await title_element.text_content() if title_element else ""
+            title_element = card.ele('.title', timeout=2)
+            title = title_element.text if title_element else ""
 
             # Extract price
-            price_element = await card.query_selector('.price')
-            price_text = await price_element.text_content() if price_element else ""
+            price_element = card.ele('.price', timeout=2)
+            price_text = price_element.text if price_element else ""
             price = self._extract_number(price_text)
 
             # Extract details
-            details_text = await card.text_content()
+            details_text = card.text
 
             # Extract rooms
             rooms = self._extract_rooms(details_text)
@@ -143,8 +159,8 @@ class Yad2Scraper(BaseScraper):
             floor = self._extract_floor(details_text)
 
             # Extract address/location
-            location_element = await card.query_selector('.subtitle')
-            location_text = await location_element.text_content() if location_element else ""
+            location_element = card.ele('.subtitle', timeout=2)
+            location_text = location_element.text if location_element else ""
 
             city, neighborhood, street = self._parse_location(location_text)
 
@@ -154,9 +170,9 @@ class Yad2Scraper(BaseScraper):
 
             # Extract images
             images = []
-            img_elements = await card.query_selector_all('img')
+            img_elements = card.eles('tag:img')
             for img in img_elements[:5]:  # Max 5 images
-                src = await img.get_attribute('src')
+                src = img.attr('src')
                 if src and 'http' in src:
                     images.append(src)
 

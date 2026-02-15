@@ -1,16 +1,19 @@
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from app.scrapers.yad2_scraper import Yad2Scraper
-from app.scrapers.madlan_scraper import MadlanScraper
-from app.scrapers.facebook_scraper import FacebookScraper
-from app.scrapers.base_scraper import ScraperWithRetry
-from app.core.listing_processor import ListingProcessor
-from app.services.telegram_notifier import TelegramNotifier
-from app.core.deal_score import update_neighborhood_stats
-from app.core.database import init_db
+
 from app.core.config import settings
-import logging
-import asyncio
+from app.core.database import init_db
+from app.core.deal_score import update_neighborhood_stats
+from app.core.listing_processor import ListingProcessor
+from app.scrapers.base_scraper import ScraperWithRetry
+from app.scrapers.facebook_scraper import FacebookScraper
+from app.scrapers.madlan_scraper import MadlanScraper
+from app.scrapers.yad2_scraper import Yad2Scraper
+from app.services.telegram_notifier import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,8 @@ class ScrapingScheduler:
         self.scheduler = AsyncIOScheduler()
         self.engine, self.SessionLocal = init_db(settings.database_url)
         self.is_running = False
+        # Thread pool for running synchronous scrapers
+        self.executor = ThreadPoolExecutor(max_workers=3)
 
     def start(self):
         """Start the scheduler"""
@@ -115,7 +120,12 @@ class ScrapingScheduler:
             scraper_with_retry = ScraperWithRetry(scraper)
 
             logger.info("[Scheduler] Executing Yad2 scraper with retry logic")
-            listings = await scraper_with_retry.scrape_with_retry()
+            # Run synchronous scraper in thread pool
+            loop = asyncio.get_event_loop()
+            listings = await loop.run_in_executor(
+                self.executor,
+                scraper_with_retry.scrape_with_retry
+            )
 
             if listings:
                 logger.info(f"[Scheduler] Yad2 scraper returned listings, count: {len(listings)}")
@@ -150,7 +160,12 @@ class ScrapingScheduler:
             scraper_with_retry = ScraperWithRetry(scraper)
 
             logger.info("[Scheduler] Executing Madlan scraper with retry logic")
-            listings = await scraper_with_retry.scrape_with_retry()
+            # Run synchronous scraper in thread pool
+            loop = asyncio.get_event_loop()
+            listings = await loop.run_in_executor(
+                self.executor,
+                scraper_with_retry.scrape_with_retry
+            )
 
             if listings:
                 logger.info(f"[Scheduler] Madlan scraper returned listings, count: {len(listings)}")
@@ -186,7 +201,12 @@ class ScrapingScheduler:
             scraper_with_retry = ScraperWithRetry(scraper)
 
             logger.info("[Scheduler] Executing Facebook scraper with retry logic")
-            listings = await scraper_with_retry.scrape_with_retry()
+            # Run synchronous scraper in thread pool
+            loop = asyncio.get_event_loop()
+            listings = await loop.run_in_executor(
+                self.executor,
+                scraper_with_retry.scrape_with_retry
+            )
 
             if listings:
                 logger.info(f"[Scheduler] Facebook scraper returned listings, count: {len(listings)}")
@@ -227,8 +247,9 @@ class ScrapingScheduler:
             return
 
         try:
-            from app.core.database import Listing
             from datetime import datetime, timedelta
+
+            from app.core.database import Listing
 
             notifier = TelegramNotifier(db)
 
@@ -267,7 +288,9 @@ class ScrapingScheduler:
 
         logger.info("Stopping scraping scheduler...")
         try:
-            # Shutdown with a short wait to allow jobs to finish gracefully
+            # Shutdown executor
+            self.executor.shutdown(wait=True)
+            # Shutdown scheduler with a short wait to allow jobs to finish gracefully
             self.scheduler.shutdown(wait=True)
         except Exception as e:
             logger.error(f"Error stopping scheduler: {e}")

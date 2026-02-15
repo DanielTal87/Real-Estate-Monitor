@@ -1,0 +1,14 @@
+[MESSAGES CONTROL]
+# Disable f-string interpolation warning for logging
+# F-strings are more readable and performance impact is negligible
+disable=logging-fstring-interpolation
+
+[FORMAT]
+max-line-length=120
+
+[BASIC]
+good-names=i,j,k,ex,db,id,_
+
+[DESIGN]
+max-args=10
+max-attributes=15

@@ -13,7 +13,7 @@ class MadlanScraper(BaseScraper):
         super().__init__(db_session, 'madlan')
         self.base_url = "https://www.madlan.co.il"
 
-    async def scrape(self) -> List[Dict]:
+    def scrape(self) -> List[Dict]:
         """Scrape Madlan listings"""
         if not self.page:
             logger.error("[Madlan Scraper] Browser page not initialized")
@@ -26,38 +26,52 @@ class MadlanScraper(BaseScraper):
             search_url = f"{self.base_url}/for-sale"
             logger.info(f"[Madlan Scraper] Navigating to search page, url: {search_url}")
 
-            await self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            # Navigate to the page
+            self.page.get(search_url)
             logger.info("[Madlan Scraper] Page loaded successfully")
 
-            await self.random_delay(2, 4)
-            logger.debug("[Madlan Scraper] Random delay completed")
+            # Wait for page to settle
+            self.random_delay(2, 3)
 
-            # Scroll to load more results
+            # Longer initial delay to let anti-bot scripts run
+            self.random_delay(3, 6)
+            logger.debug("[Madlan Scraper] Initial delay completed")
+
+            # Simulate human-like mouse movements
+            self.human_like_mouse_movement()
+            logger.debug("[Madlan Scraper] Mouse movements simulated")
+
+            # Scroll to load more results with human-like behavior
             logger.info("[Madlan Scraper] Scrolling page to load dynamic content, scrolls: 3")
-            await self.scroll_page(scrolls=3)
-            await self.random_delay(1, 2)
+            self.scroll_page(scrolls=3)
+            self.random_delay(2, 4)
 
             # Get listing cards - Madlan uses different selectors
-            logger.info("[Madlan Scraper] Attempting to find listing cards with selector: [data-testid=\"listing-card\"]")
-            listing_cards = await self.page.query_selector_all('[data-testid="listing-card"]')
+            logger.info("[Madlan Scraper] Attempting to find listing cards with selector: css:[data-testid=\"listing-card\"]")
+            listing_cards = self.page.eles('css:[data-testid="listing-card"]')
 
             if not listing_cards:
                 logger.info("[Madlan Scraper] Primary selector failed, trying alternative: .listing-card")
-                listing_cards = await self.page.query_selector_all('.listing-card')
+                listing_cards = self.page.eles('.listing-card')
 
             if not listing_cards:
-                logger.info("[Madlan Scraper] Second selector failed, trying: [class*=\"listing\"]")
-                listing_cards = await self.page.query_selector_all('[class*="listing"]')
+                logger.info("[Madlan Scraper] Second selector failed, trying: css:[class*=\"listing\"]")
+                listing_cards = self.page.eles('css:[class*="listing"]')
 
             if not listing_cards:
-                logger.info("[Madlan Scraper] Third selector failed, trying: [class*=\"card\"]")
-                listing_cards = await self.page.query_selector_all('[class*="card"]')
+                logger.info("[Madlan Scraper] Third selector failed, trying: css:[class*=\"card\"]")
+                listing_cards = self.page.eles('css:[class*="card"]')
 
             if not listing_cards:
-                logger.info("[Madlan Scraper] Fourth selector failed, trying generic: article a, div[class*=\"item\"] a")
-                listing_cards = await self.page.query_selector_all('article a, div[class*="item"] a')
+                logger.info("[Madlan Scraper] Fourth selector failed, trying generic: tag:article")
+                listing_cards = self.page.eles('tag:article')
 
             logger.info(f"[Madlan Scraper] Found listing cards, count: {len(listing_cards)}")
+
+            # Debug: Save page if no listings found
+            if len(listing_cards) == 0:
+                logger.warning("[Madlan Scraper] No listing cards found - saving debug output")
+                self.debug_save_page("no_listings")
 
             # Process only first 30 newest listings per scrape
             max_listings = min(len(listing_cards), 30)
@@ -66,7 +80,7 @@ class MadlanScraper(BaseScraper):
             for idx, card in enumerate(listing_cards[:30], 1):
                 try:
                     logger.debug(f"[Madlan Scraper] Extracting listing data, index: {idx}/{max_listings}")
-                    listing_data = await self._extract_listing_data(card)
+                    listing_data = self._extract_listing_data(card)
                     if listing_data:
                         parsed = self.parse_listing(listing_data)
                         if parsed:
@@ -88,15 +102,15 @@ class MadlanScraper(BaseScraper):
 
         return listings
 
-    async def _extract_listing_data(self, card) -> Optional[Dict]:
+    def _extract_listing_data(self, card) -> Optional[Dict]:
         """Extract data from a single listing card"""
         try:
             # Extract link and ID
-            link_element = await card.query_selector('a')
+            link_element = card.ele('tag:a', timeout=2)
             if not link_element:
                 return None
 
-            href = await link_element.get_attribute('href')
+            href = link_element.link
             if not href:
                 return None
 
@@ -107,15 +121,21 @@ class MadlanScraper(BaseScraper):
             external_id = id_match.group(1) if id_match else None
 
             # Extract all text content
-            card_text = await card.text_content()
+            card_text = card.text
 
             # Extract title (usually the first line or prominent text)
-            title_element = await card.query_selector('h2, h3, .title, [class*="title"]')
-            title = await title_element.text_content() if title_element else ""
+            title_element = card.ele('tag:h2', timeout=2)
+            if not title_element:
+                title_element = card.ele('tag:h3', timeout=2)
+            if not title_element:
+                title_element = card.ele('.title', timeout=2)
+            if not title_element:
+                title_element = card.ele('css:[class*="title"]', timeout=2)
+            title = title_element.text if title_element else ""
 
             # Extract price
-            price_element = await card.query_selector('[class*="price"]')
-            price_text = await price_element.text_content() if price_element else ""
+            price_element = card.ele('css:[class*="price"]', timeout=2)
+            price_text = price_element.text if price_element else ""
             price = self._extract_number(price_text)
 
             # Extract details
@@ -124,8 +144,10 @@ class MadlanScraper(BaseScraper):
             floor = self._extract_floor(card_text)
 
             # Extract location
-            location_element = await card.query_selector('[class*="location"], [class*="address"]')
-            location_text = await location_element.text_content() if location_element else ""
+            location_element = card.ele('css:[class*="location"]', timeout=2)
+            if not location_element:
+                location_element = card.ele('css:[class*="address"]', timeout=2)
+            location_text = location_element.text if location_element else ""
 
             if not location_text:
                 # Try to find location in card text
@@ -135,9 +157,9 @@ class MadlanScraper(BaseScraper):
 
             # Extract images
             images = []
-            img_elements = await card.query_selector_all('img')
+            img_elements = card.eles('tag:img')
             for img in img_elements[:5]:
-                src = await img.get_attribute('src')
+                src = img.attr('src')
                 if src and ('http' in src or src.startswith('//')):
                     if src.startswith('//'):
                         src = 'https:' + src

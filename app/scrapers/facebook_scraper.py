@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 class FacebookScraper(BaseScraper):
     """Scraper for Facebook Marketplace and Groups"""
 
-    def __init__(self, db_session, cookies_file: str = None):
+    def __init__(self, db_session, cookies_file: Optional[str] = None):
         super().__init__(db_session, 'facebook')
         self.base_url = "https://www.facebook.com"
         self.cookies_file = cookies_file
 
-    async def _load_cookies(self):
+    def _load_cookies(self):
         """Load Facebook cookies from file"""
         if not self.cookies_file or not os.path.exists(self.cookies_file):
             logger.warning("Facebook cookies file not found. Facebook scraping may not work.")
@@ -27,12 +27,16 @@ class FacebookScraper(BaseScraper):
                 cookies = json.load(f)
 
             if cookies and self.page:
-                await self.page.context.add_cookies(cookies)
+                for cookie in cookies:
+                    # Convert cookie format if needed
+                    if 'sameSite' in cookie:
+                        cookie['sameSite'] = cookie['sameSite'].capitalize()
+                    self.page.set.cookies(cookie)
                 logger.info("Loaded Facebook cookies from file")
         except Exception as e:
             logger.warning(f"Failed to load Facebook cookies: {e}")
 
-    async def scrape(self) -> List[Dict]:
+    def scrape(self) -> List[Dict]:
         """Scrape Facebook Marketplace listings"""
         if not self.page:
             logger.error("[Facebook Scraper] Browser page not initialized")
@@ -45,11 +49,16 @@ class FacebookScraper(BaseScraper):
             search_url = f"{self.base_url}/marketplace/telaviv/search?query=דירה%20להשכרה&exact=false"
             logger.info(f"[Facebook Scraper] Navigating to search page, url: {search_url}")
 
-            await self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            # Navigate to the page
+            self.page.get(search_url)
             logger.info("[Facebook Scraper] Page loaded successfully")
 
-            await self.random_delay(3, 5)
-            logger.debug("[Facebook Scraper] Random delay completed")
+            # Wait for page to settle
+            self.random_delay(2, 3)
+
+            # Longer initial delay to let anti-bot scripts run
+            self.random_delay(4, 7)
+            logger.debug("[Facebook Scraper] Initial delay completed")
 
             # Check if login is required
             current_url = self.page.url
@@ -59,28 +68,39 @@ class FacebookScraper(BaseScraper):
                 logger.warning("[Facebook Scraper] Login required - cookies missing or expired")
                 return []
 
-            # Scroll to load more results
+            # Simulate human-like mouse movements
+            self.human_like_mouse_movement()
+            logger.debug("[Facebook Scraper] Mouse movements simulated")
+
+            # Scroll to load more results with human-like behavior
             logger.info("[Facebook Scraper] Scrolling page to load dynamic content, scrolls: 4")
-            await self.scroll_page(scrolls=4)
-            await self.random_delay(2, 3)
+            self.scroll_page(scrolls=4)
+            self.random_delay(2, 4)
 
             # Get listing cards
-            logger.info("[Facebook Scraper] Attempting to find listing cards with selector: [data-testid=\"marketplace-feed-item\"]")
-            listing_cards = await self.page.query_selector_all('[data-testid="marketplace-feed-item"]')
+            logger.info("[Facebook Scraper] Attempting to find listing cards with selector: css:[data-testid=\"marketplace-feed-item\"]")
+            listing_cards = self.page.eles('css:[data-testid="marketplace-feed-item"]')
 
             if not listing_cards:
-                logger.info("[Facebook Scraper] Primary selector failed, trying alternative: div[role=\"article\"]")
-                listing_cards = await self.page.query_selector_all('div[role="article"]')
+                logger.info("[Facebook Scraper] Primary selector failed, trying alternative: css:div[role=\"article\"]")
+                listing_cards = self.page.eles('css:div[role="article"]')
 
             if not listing_cards:
-                logger.info("[Facebook Scraper] Second selector failed, trying: [class*=\"marketplace\"]")
-                listing_cards = await self.page.query_selector_all('[class*="marketplace"]')
+                logger.info("[Facebook Scraper] Second selector failed, trying: css:[class*=\"marketplace\"]")
+                listing_cards = self.page.eles('css:[class*="marketplace"]')
 
             if not listing_cards:
-                logger.info("[Facebook Scraper] Third selector failed, trying generic: div[class*=\"feed\"] > div")
-                listing_cards = await self.page.query_selector_all('div[class*="feed"] > div, div[class*="item"]')
+                logger.info("[Facebook Scraper] Third selector failed, trying generic: css:div[class*=\"feed\"] > div")
+                listing_cards = self.page.eles('css:div[class*="feed"] > div')
+                if not listing_cards:
+                    listing_cards = self.page.eles('css:div[class*="item"]')
 
             logger.info(f"[Facebook Scraper] Found listing cards, count: {len(listing_cards)}")
+
+            # Debug: Save page if no listings found
+            if len(listing_cards) == 0:
+                logger.warning("[Facebook Scraper] No listing cards found - saving debug output")
+                self.debug_save_page("no_listings")
 
             # Process listings
             max_listings = min(len(listing_cards), 30)
@@ -89,7 +109,7 @@ class FacebookScraper(BaseScraper):
             for idx, card in enumerate(listing_cards[:30], 1):
                 try:
                     logger.debug(f"[Facebook Scraper] Extracting listing data, index: {idx}/{max_listings}")
-                    listing_data = await self._extract_listing_data(card)
+                    listing_data = self._extract_listing_data(card)
                     if listing_data:
                         parsed = self.parse_listing(listing_data)
                         if parsed:
@@ -111,15 +131,15 @@ class FacebookScraper(BaseScraper):
 
         return listings
 
-    async def _extract_listing_data(self, card) -> Optional[Dict]:
+    def _extract_listing_data(self, card) -> Optional[Dict]:
         """Extract data from a single Facebook listing card"""
         try:
             # Extract link
-            link_element = await card.query_selector('a')
+            link_element = card.ele('tag:a', timeout=2)
             if not link_element:
                 return None
 
-            href = await link_element.get_attribute('href')
+            href = link_element.link
             if not href:
                 return None
 
@@ -133,15 +153,15 @@ class FacebookScraper(BaseScraper):
                 full_url = href
 
             # Extract all text content
-            card_text = await card.text_content()
+            card_text = card.text
 
             # Extract title
             title = ""
-            title_selectors = ['span[class*="title"]', 'h2', 'h3']
+            title_selectors = ['css:span[class*="title"]', 'tag:h2', 'tag:h3']
             for selector in title_selectors:
-                title_element = await card.query_selector(selector)
+                title_element = card.ele(selector, timeout=2)
                 if title_element:
-                    title = await title_element.text_content()
+                    title = title_element.text
                     break
 
             # Extract price
@@ -156,9 +176,9 @@ class FacebookScraper(BaseScraper):
 
             # Extract images
             images = []
-            img_elements = await card.query_selector_all('img')
+            img_elements = card.eles('tag:img')
             for img in img_elements[:5]:
-                src = await img.get_attribute('src')
+                src = img.attr('src')
                 if src and 'http' in src:
                     images.append(src)
 
