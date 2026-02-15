@@ -89,13 +89,13 @@ class BaseScraper(ABC):
 
             except Exception as conn_error:
                 # Provide helpful error message if connection fails
+                user_data_dir = settings.chrome_user_data_dir.replace("~", "$HOME")
                 error_msg = (
-                    f"❌ Failed to connect to Chrome on port {settings.chrome_debug_port}.\n"
-                    f"Please start Chrome with remote debugging enabled:\n\n"
-                    f"macOS:\n"
+                    f"❌ Action Required: Start Chrome with remote debugging port {settings.chrome_debug_port}\n\n"
+                    f"macOS Command:\n"
                     f'/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome '
                     f'--remote-debugging-port={settings.chrome_debug_port} '
-                    f'--user-data-dir="$HOME/chrome-profile-bot"\n\n'
+                    f'--user-data-dir="{user_data_dir}"\n\n'
                     f"Error: {conn_error}"
                 )
                 logger.error(f"[{self.source_name}] {error_msg}")
@@ -252,10 +252,14 @@ class BaseScraper(ABC):
         except Exception as e:
             logger.debug(f"[{self.source_name}] Mouse movement simulation failed: {e}")
 
-    def scroll_page(self, scrolls: int = 3):
+    def scroll_page(self, scrolls: int = None):
         """Scroll page to load dynamic content with human-like behavior"""
         if not self.page:
             return
+
+        # Use configured default if not specified
+        if scrolls is None:
+            scrolls = settings.default_max_scrolls
 
         for i in range(scrolls):
             # Variable scroll amounts to appear more human
@@ -264,8 +268,8 @@ class BaseScraper(ABC):
             # Smooth scroll
             self.page.scroll.down(scroll_amount)
 
-            # Random delay between scrolls
-            self.random_delay(0.8, 2.5)
+            # Random delay between scrolls using configured values
+            self.random_delay(settings.min_wait_after_scroll, settings.max_wait_after_scroll)
 
             # Occasionally scroll back up a bit (human behavior)
             if random.random() < 0.3:
@@ -345,13 +349,13 @@ class BaseScraper(ABC):
 
         self.db.commit()
 
-    def _handle_anti_bot_protection(self):
+    def _is_blocked(self) -> bool:
         """
-        Detect and handle anti-bot protection (CAPTCHA, security checks, etc.)
-        Pauses execution and waits for manual intervention if detected.
+        Detect if the page is blocked by anti-bot protection.
+        Returns True if blocked, False otherwise.
         """
         if not self.page:
-            return
+            return False
 
         try:
             # Get page title and content for detection
@@ -375,12 +379,28 @@ class BaseScraper(ABC):
             ]
 
             # Check if any indicator is present
-            detected = False
             for indicator in anti_bot_indicators:
                 if indicator in page_title or indicator in page_html:
-                    detected = True
                     logger.warning(f"[{self.source_name}] 🚨 Anti-bot protection detected: '{indicator}'")
-                    break
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"[{self.source_name}] Error checking if blocked: {e}")
+            return False
+
+    def _handle_anti_bot_protection(self):
+        """
+        Detect and handle anti-bot protection (CAPTCHA, security checks, etc.)
+        Pauses execution and waits for manual intervention if detected.
+        """
+        if not self.page:
+            return
+
+        try:
+            # Check if page is blocked
+            detected = self._is_blocked()
 
             if not detected:
                 # If we were waiting and now it's clear, reset state
@@ -428,17 +448,8 @@ class BaseScraper(ABC):
                     self.page.refresh()
                     time.sleep(2)  # Wait for page to load
 
-                    # Re-check for anti-bot indicators
-                    page_title = self.page.title.lower() if self.page.title else ""
-                    page_html = self.page.html.lower() if self.page.html else ""
-
-                    still_blocked = False
-                    for indicator in anti_bot_indicators:
-                        if indicator in page_title or indicator in page_html:
-                            still_blocked = True
-                            break
-
-                    if not still_blocked:
+                    # Re-check using _is_blocked() method
+                    if not self._is_blocked():
                         # CAPTCHA solved!
                         elapsed = (datetime.utcnow() - start_time).total_seconds() / 60
                         logger.info(
@@ -492,10 +503,11 @@ class BaseScraper(ABC):
 class ScraperWithRetry:
     """Wrapper to add retry logic to scrapers"""
 
-    def __init__(self, scraper: BaseScraper, max_retries: int = 3, retry_delay: int = 60):
+    def __init__(self, scraper: BaseScraper, max_retries: int = 3, retry_delay: int = 60, shutdown_event = None):
         self.scraper = scraper
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.shutdown_event = shutdown_event
 
     def scrape_with_retry(self) -> List[Dict]:
         """Execute scraping with retry logic"""
@@ -504,6 +516,11 @@ class ScraperWithRetry:
         last_error = None
 
         for attempt in range(self.max_retries):
+            # Check for shutdown signal
+            if self.shutdown_event and self.shutdown_event.is_set():
+                logger.info(f"[Scraper Retry] Shutdown signal received, aborting scrape for {source}")
+                return []
+
             try:
                 logger.info(f"[Scraper Retry] Attempt {attempt + 1}/{self.max_retries}, source: {source}")
 
@@ -532,8 +549,13 @@ class ScraperWithRetry:
                     logger.warning(f"[Scraper Retry] Cleanup failed, source: {source}, error: {cleanup_error}")
 
                 if attempt < self.max_retries - 1:
+                    # Check for shutdown during retry delay
                     logger.info(f"[Scraper Retry] Retrying in {self.retry_delay} seconds, source: {source}")
-                    time.sleep(self.retry_delay)
+                    for _ in range(self.retry_delay):
+                        if self.shutdown_event and self.shutdown_event.is_set():
+                            logger.info(f"[Scraper Retry] Shutdown signal received during retry delay for {source}")
+                            return []
+                        time.sleep(1)
 
         # All retries failed
         error_msg = f"Failed after {self.max_retries} attempts: {last_error}"

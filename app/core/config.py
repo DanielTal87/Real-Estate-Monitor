@@ -53,8 +53,24 @@ class Settings(BaseSettings):
 
     # Persistent Browser Mode (Anti-Bot Protection)
     chrome_debug_port: int = Field(default=9222, env="CHROME_DEBUG_PORT")
+    chrome_user_data_dir: str = Field(default="~/chrome_bot_profile", env="CHROME_USER_DATA_DIR")
+    headless: bool = Field(default=False, env="HEADLESS")
+
+    # Scraping Behavior
+    default_max_scrolls: int = Field(default=5, env="DEFAULT_MAX_SCROLLS")
+    min_wait_after_scroll: float = Field(default=2.0, env="MIN_WAIT_AFTER_SCROLL")
+    max_wait_after_scroll: float = Field(default=5.0, env="MAX_WAIT_AFTER_SCROLL")
+
+    # Retries
+    scraper_max_retries: int = Field(default=3, env="SCRAPER_MAX_RETRIES")
+    retry_delay_seconds: int = Field(default=60, env="RETRY_DELAY_SECONDS")
+
+    # Captcha Logic
     captcha_check_interval: int = Field(default=30, env="CAPTCHA_CHECK_INTERVAL")
     captcha_timeout_minutes: int = Field(default=30, env="CAPTCHA_TIMEOUT_MINUTES")
+
+    # Deal Score Logic
+    min_deal_score_for_noti: float = Field(default=80, env="MIN_DEAL_SCORE_FOR_NOTI")
 
     # Logging
     log_level: str = Field(default="INFO", env="LOG_LEVEL")

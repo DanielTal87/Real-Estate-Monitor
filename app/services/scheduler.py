@@ -21,10 +21,11 @@ logger = logging.getLogger(__name__)
 class ScrapingScheduler:
     """Manage scheduled scraping jobs"""
 
-    def __init__(self):
+    def __init__(self, shutdown_event: asyncio.Event = None):
         self.scheduler = AsyncIOScheduler()
         self.engine, self.SessionLocal = init_db(settings.database_url)
         self.is_running = False
+        self.shutdown_event = shutdown_event or asyncio.Event()
         # Thread pool for running synchronous scrapers
         self.executor = ThreadPoolExecutor(max_workers=3)
 
@@ -109,6 +110,11 @@ class ScrapingScheduler:
 
     async def scrape_yad2(self):
         """Scrape Yad2"""
+        # Check if shutdown requested
+        if self.shutdown_event.is_set():
+            logger.info("[Scheduler] Shutdown requested, skipping Yad2 scrape")
+            return
+
         logger.info("=" * 60)
         logger.info("[Scheduler] 🔍 Starting Yad2 scrape job")
         logger.info("=" * 60)
@@ -117,7 +123,12 @@ class ScrapingScheduler:
         try:
             logger.info("[Scheduler] Initializing Yad2 scraper")
             scraper = Yad2Scraper(db)
-            scraper_with_retry = ScraperWithRetry(scraper)
+            scraper_with_retry = ScraperWithRetry(
+                scraper,
+                max_retries=settings.scraper_max_retries,
+                retry_delay=settings.retry_delay_seconds,
+                shutdown_event=self.shutdown_event
+            )
 
             logger.info("[Scheduler] Executing Yad2 scraper with retry logic")
             # Run synchronous scraper in thread pool
@@ -149,6 +160,11 @@ class ScrapingScheduler:
 
     async def scrape_madlan(self):
         """Scrape Madlan"""
+        # Check if shutdown requested
+        if self.shutdown_event.is_set():
+            logger.info("[Scheduler] Shutdown requested, skipping Madlan scrape")
+            return
+
         logger.info("=" * 60)
         logger.info("[Scheduler] 🔍 Starting Madlan scrape job")
         logger.info("=" * 60)
@@ -157,7 +173,12 @@ class ScrapingScheduler:
         try:
             logger.info("[Scheduler] Initializing Madlan scraper")
             scraper = MadlanScraper(db)
-            scraper_with_retry = ScraperWithRetry(scraper)
+            scraper_with_retry = ScraperWithRetry(
+                scraper,
+                max_retries=settings.scraper_max_retries,
+                retry_delay=settings.retry_delay_seconds,
+                shutdown_event=self.shutdown_event
+            )
 
             logger.info("[Scheduler] Executing Madlan scraper with retry logic")
             # Run synchronous scraper in thread pool
@@ -189,6 +210,11 @@ class ScrapingScheduler:
 
     async def scrape_facebook(self):
         """Scrape Facebook"""
+        # Check if shutdown requested
+        if self.shutdown_event.is_set():
+            logger.info("[Scheduler] Shutdown requested, skipping Facebook scrape")
+            return
+
         logger.info("=" * 60)
         logger.info("[Scheduler] 🔍 Starting Facebook scrape job")
         logger.info("=" * 60)
@@ -198,7 +224,12 @@ class ScrapingScheduler:
             cookies_file = settings.facebook_cookies_file
             logger.info(f"[Scheduler] Initializing Facebook scraper, cookies_file: {cookies_file}")
             scraper = FacebookScraper(db, cookies_file=cookies_file)
-            scraper_with_retry = ScraperWithRetry(scraper)
+            scraper_with_retry = ScraperWithRetry(
+                scraper,
+                max_retries=settings.scraper_max_retries,
+                retry_delay=settings.retry_delay_seconds,
+                shutdown_event=self.shutdown_event
+            )
 
             logger.info("[Scheduler] Executing Facebook scraper with retry logic")
             # Run synchronous scraper in thread pool

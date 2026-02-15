@@ -37,20 +37,33 @@ Scrapes, analyzes, and notifies you about apartment listings from **Yad2**, **Ma
 
 ```bash
 # Open a new terminal and run this command:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir="$HOME/chrome-profile-bot"
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/chrome_bot_profile"
+```
+
+**Configuration:** You can customize these settings in your `.env` file:
+
+```bash
+CHROME_DEBUG_PORT=9222                    # Change the debug port
+CHROME_USER_DATA_DIR=~/chrome_bot_profile # Change the profile directory
+HEADLESS=false                            # Set to true for headless mode (not recommended for CAPTCHA)
 ```
 
 **What this does:**
-- Opens Chrome with remote debugging on port 9222
-- Uses a separate profile (`chrome-profile-bot`) to avoid conflicts with your regular Chrome
+
+- Opens Chrome with remote debugging on port 9222 (configurable via `CHROME_DEBUG_PORT`)
+- Uses a separate profile (`chrome_bot_profile`) to avoid conflicts with your regular Chrome
 - Allows the scraper to connect to this browser instead of launching new instances
 - **Keep this Chrome window open** while the scraper is running
 
 **Benefits:**
+
 - ✅ Manual CAPTCHA solving when needed
 - ✅ Browser stays open between scraping runs
 - ✅ Better anti-bot evasion
 - ✅ Persistent cookies and session
+- ✅ Fully configurable via environment variables
 
 ### Step 1: Setup (2 minutes)
 
@@ -79,6 +92,7 @@ nano .env  # Or: code .env, vim .env
 **Choose a configuration below and paste into your `.env` file:**
 
 #### 🎓 Student / Budget Rental
+
 ```bash
 CITIES=תל אביב-יפו
 MAX_PRICE=5000
@@ -89,6 +103,7 @@ REQUIRE_PARKING=false
 ```
 
 #### 💼 Young Professional
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים
 MAX_PRICE=7000
@@ -100,6 +115,7 @@ HIGH_PRIORITY_NEIGHBORHOODS=רמת אביב,בבלי,נווה צדק
 ```
 
 #### 👨‍👩‍👧‍👦 Family Rental
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים,הרצליה
 MAX_PRICE=10000
@@ -112,6 +128,7 @@ REQUIRE_MAMAD=true
 ```
 
 #### 🏡 Buying Apartment
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים
 MAX_PRICE=2500000
@@ -134,6 +151,7 @@ python main.py
 ### That's It! 🎉
 
 The system is now:
+
 - ✅ Scraping listings every 15 minutes
 - ✅ Calculating deal scores
 - ✅ Detecting price drops
@@ -204,6 +222,7 @@ See [`.env.example`](.env.example) for complete configuration options with detai
 ### Quick Configurations
 
 #### Rental - Student Budget
+
 ```bash
 CITIES=תל אביב-יפו
 MAX_PRICE=5000
@@ -216,6 +235,7 @@ SCRAPING_INTERVAL_MINUTES=15
 ```
 
 #### Rental - Young Professional
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים
 MAX_PRICE=7000
@@ -231,6 +251,7 @@ SCRAPING_INTERVAL_MINUTES=15
 ```
 
 #### Rental - Family (3+ Rooms)
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים,הרצליה,רמת השרון
 MAX_PRICE=10000
@@ -246,6 +267,7 @@ SCRAPING_INTERVAL_MINUTES=15
 ```
 
 #### Buying - First Apartment
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים
 MAX_PRICE=2000000
@@ -260,6 +282,7 @@ SCRAPING_INTERVAL_MINUTES=20
 ```
 
 #### Buying - Family Apartment
+
 ```bash
 CITIES=תל אביב-יפו,רמת גן,גבעתיים,הרצליה,רמת השרון
 MAX_PRICE=3500000
@@ -329,6 +352,7 @@ You should receive a test message! 📱
 ### Notification Rules
 
 You'll receive notifications when:
+
 1. **New listing** with deal score ≥ 80
 2. **New listing** in high-priority neighborhood
 3. **Price drop** ≥ 3%
@@ -344,11 +368,13 @@ Open [`http://127.0.0.1:8000`](http://127.0.0.1:8000) in your browser.
 ### Main Features
 
 #### 1. View & Filter Listings
+
 - **Filter by**: City, neighborhood, status, minimum score, price range
 - **Sort by**: Deal score, price, date
 - **Status**: All, Unseen, Liked, Hidden, Contacted
 
 #### 2. Listing Actions
+
 - ❤️ **Like** - Mark as interested
 - ❌ **Hide** - Mark as not interested
 - 📞 **Contacted** - Mark as contacted
@@ -356,12 +382,14 @@ Open [`http://127.0.0.1:8000`](http://127.0.0.1:8000) in your browser.
 - 💬 **WhatsApp** - Direct contact with seller
 
 #### 3. Statistics Panel
+
 - Total listings in database
 - New listings today
 - High-score listings (≥80)
 - Active filters indicator
 
 #### 4. Listing Details
+
 - Click any listing to see:
   - Full description and images
   - Price history chart
@@ -375,7 +403,9 @@ Open [`http://127.0.0.1:8000`](http://127.0.0.1:8000) in your browser.
 Each listing gets a score from 0-100 based on four factors:
 
 ### 1. Price Competitiveness (40 points max)
+
 Compared to neighborhood average:
+
 - 30%+ below average = 40 points
 - 20% below average = 35 points
 - 10% below average = 30 points
@@ -384,7 +414,9 @@ Compared to neighborhood average:
 - 20%+ above average = 5 points
 
 ### 2. Features Match (30 points max)
+
 Based on your preferences:
+
 - Parking (if preferred): 10 points
 - Balcony (if preferred): 8 points
 - Elevator (if preferred): 7 points
@@ -392,7 +424,9 @@ Based on your preferences:
 - Top floor (if preferred): 5 points
 
 ### 3. Recency (15 points max)
+
 How fresh the listing is:
+
 - Today: 15 points
 - 1-2 days: 12 points
 - 3-5 days: 9 points
@@ -401,7 +435,9 @@ How fresh the listing is:
 - 20+ days: 1 point
 
 ### 4. Price Trend (15 points max)
+
 Price change history:
+
 - 10%+ price drop: 15 points
 - 5-10% drop: 12 points
 - 2-5% drop: 9 points
@@ -410,6 +446,7 @@ Price change history:
 - Price increase: 2 points
 
 ### Score Interpretation
+
 - **80-100**: 🔥 Excellent deal - Act immediately!
 - **60-79**: 👍 Good listing - Worth considering
 - **40-59**: 😐 Average - Meets basic criteria
@@ -458,37 +495,50 @@ Real-Estate-Monitor/
 
 ### Chrome Connection Failed
 
-If you see an error like "Failed to connect to Chrome on port 9222":
+If you see an error like "Action Required: Start Chrome with remote debugging port 9222":
 
 ```bash
 # 1. Make sure Chrome is running with debug mode:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir="$HOME/chrome-profile-bot"
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/chrome_bot_profile"
 
-# 2. Check if port 9222 is in use:
+# 2. Check if the port is in use:
 lsof -i :9222
 
 # 3. If you want to use a different port, update .env:
 CHROME_DEBUG_PORT=9223
+CHROME_USER_DATA_DIR=~/chrome_bot_profile
 
 # Then restart Chrome with the new port:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9223 --user-data-dir="$HOME/chrome-profile-bot"
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9223 \
+  --user-data-dir="$HOME/chrome_bot_profile"
 ```
 
 ### CAPTCHA Detected
 
-When the scraper detects a CAPTCHA:
+When the scraper detects a CAPTCHA or anti-bot protection:
 
 1. **Dashboard shows warning banner**: "⚠️ Scraper Paused: CAPTCHA Detected"
-2. **Check the open Chrome window**: You'll see the CAPTCHA page
+2. **Check the open Chrome window**: You'll see the CAPTCHA or security check page
 3. **Solve it manually**: Complete the CAPTCHA in the browser
 4. **Scraper auto-resumes**: Once solved, scraping continues automatically
-5. **Timeout**: If not solved within 30 minutes (configurable), the scraper aborts
+5. **Timeout**: If not solved within the configured timeout, the scraper aborts
 
-**Configure CAPTCHA timeouts in `.env`:**
+**Configure CAPTCHA behavior in `.env`:**
+
 ```bash
-CAPTCHA_CHECK_INTERVAL=30        # Check every 30 seconds
-CAPTCHA_TIMEOUT_MINUTES=30       # Abort after 30 minutes
+CAPTCHA_CHECK_INTERVAL=30        # How often to check if solved (seconds)
+CAPTCHA_TIMEOUT_MINUTES=30       # Maximum wait time before aborting (minutes)
 ```
+
+**Detected anti-bot systems:**
+- PerimeterX
+- ShieldSquare
+- Cloudflare
+- reCAPTCHA
+- Hebrew security checks ("אבטחת אתר")
 
 ### Application won't start
 
@@ -678,12 +728,14 @@ Facebook requires authentication via cookies:
 
 This system is for **personal use only**:
 
-### ✅ Allowed:
+### ✅ Allowed
+
 - Running locally for apartment hunting
 - Notifying yourself about listings
 - Storing data locally on your computer
 
-### ❌ Not Allowed:
+### ❌ Not Allowed
+
 - Sharing scraped data publicly
 - Selling or commercializing data
 - Overloading websites with excessive requests
@@ -696,6 +748,7 @@ This system is for **personal use only**:
 ## 📊 Performance & Requirements
 
 ### System Requirements
+
 - **Python**: 3.9 or higher
 - **CPU**: Low (< 5% when idle)
 - **RAM**: ~200-300 MB
@@ -703,6 +756,7 @@ This system is for **personal use only**:
 - **Network**: Minimal (scraping only)
 
 ### Designed For
+
 - **Personal use** on single machine
 - **3-5 cities** simultaneous monitoring
 - **100-500 listings** in database
