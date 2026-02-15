@@ -1,4 +1,4 @@
-name: Python Tests
+name: CI/CD Pipeline
 
 on:
   push:
@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   test:
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15  # Prevent hanging jobs
 
@@ -94,8 +95,16 @@ jobs:
       run: |
         echo "## Test Results - Python ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Parse test results from JUnit XML
+        if [ -f pytest-results.xml ]; then
+          python3 .github/scripts/parse_test_results.py >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Add coverage info
         if [ -f coverage.xml ]; then
           COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(f\"{float(root.attrib['line-rate']) * 100:.1f}\")")
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
         fi
 
@@ -172,6 +181,7 @@ jobs:
           }
 
   lint:
+    name: Code Quality & Linting
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -206,6 +216,7 @@ jobs:
         mypy app/ --ignore-missing-imports --no-strict-optional --pretty
 
   security:
+    name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
