@@ -221,37 +221,45 @@ class ScraperWithRetry:
 
     async def scrape_with_retry(self) -> List[Dict]:
         """Execute scraping with retry logic"""
+        source = self.scraper.source_name
+        logger.info(f"[Scraper Retry] Starting scrape with retry, source: {source}, max_retries: {self.max_retries}")
         last_error = None
 
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"Scraping {self.scraper.source_name} (attempt {attempt + 1}/{self.max_retries})")
+                logger.info(f"[Scraper Retry] Attempt {attempt + 1}/{self.max_retries}, source: {source}")
 
+                logger.debug(f"[Scraper Retry] Initializing browser, source: {source}")
                 await self.scraper.initialize()
+
+                logger.info(f"[Scraper Retry] Executing scrape, source: {source}")
                 listings = await self.scraper.scrape()
+
+                logger.debug(f"[Scraper Retry] Cleaning up browser, source: {source}")
                 await self.scraper.cleanup()
 
                 self.scraper.update_scraping_state(success=True)
-                logger.info(f"Successfully scraped {len(listings)} listings from {self.scraper.source_name}")
+                logger.info(f"[Scraper Retry] ✅ Scrape successful, source: {source}, listings_count: {len(listings)}")
 
                 return listings
 
             except Exception as e:
                 last_error = e
-                logger.error(f"Error scraping {self.scraper.source_name} (attempt {attempt + 1}): {e}")
+                logger.error(f"[Scraper Retry] ❌ Attempt {attempt + 1} failed, source: {source}, error: {e}")
 
                 try:
+                    logger.debug(f"[Scraper Retry] Attempting cleanup after error, source: {source}")
                     await self.scraper.cleanup()
-                except:
-                    pass
+                except Exception as cleanup_error:
+                    logger.warning(f"[Scraper Retry] Cleanup failed, source: {source}, error: {cleanup_error}")
 
                 if attempt < self.max_retries - 1:
-                    logger.info(f"Retrying in {self.retry_delay} seconds...")
+                    logger.info(f"[Scraper Retry] Retrying in {self.retry_delay} seconds, source: {source}")
                     await asyncio.sleep(self.retry_delay)
 
         # All retries failed
         error_msg = f"Failed after {self.max_retries} attempts: {last_error}"
         self.scraper.update_scraping_state(success=False, error_msg=error_msg)
-        logger.error(f"Giving up on {self.scraper.source_name}: {error_msg}")
+        logger.error(f"[Scraper Retry] ❌ All retries exhausted, source: {source}, error: {error_msg}")
 
         return []

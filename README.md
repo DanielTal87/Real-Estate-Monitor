@@ -118,6 +118,35 @@ The system is now:
 - ✅ Detecting price drops
 - ✅ Available via web dashboard
 
+### Monitoring the Application
+
+```bash
+# View real-time logs
+tail -f real_estate_monitor.log
+
+# Check scraper status
+curl http://127.0.0.1:8000/health
+
+# View database statistics
+curl http://127.0.0.1:8000/api/db-stats
+
+# View database directly
+sqlite3 real_estate.db "SELECT COUNT(*) as total FROM listings;"
+sqlite3 real_estate.db "SELECT source, COUNT(*) as count FROM listings GROUP BY source;"
+sqlite3 real_estate.db "SELECT city, COUNT(*) as count FROM listings GROUP BY city;"
+
+# Add test data to see the dashboard in action
+python add_test_listings.py
+```
+
+### Stopping the Application
+
+```bash
+# Press Ctrl+C in the terminal
+# The application will shut down gracefully within 5 seconds
+# If it takes longer, press Ctrl+C again to force quit
+```
+
 ---
 
 ## 🎯 Features

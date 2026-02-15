@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -55,9 +55,14 @@
             <span class="navbar-brand mb-0 h1">
                 <i class="bi bi-house-door"></i> Real Estate Monitor
             </span>
-            <span class="text-white">
-                <i class="bi bi-clock"></i> Last Update: Now
-            </span>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-3">
+                    <i class="bi bi-clock"></i> Last Update: <span id="last-update">Now</span>
+                </span>
+                <a href="/health" target="_blank" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-heart-pulse"></i> Status
+                </a>
+            </div>
         </div>
     </nav>
 
@@ -279,7 +284,21 @@
 
         {% if not listings %}
         <div class="alert alert-info text-center" role="alert">
-            <i class="bi bi-info-circle"></i> No listings found matching your filters.
+            <h4><i class="bi bi-info-circle"></i> No listings found</h4>
+            <p class="mb-3">This could mean:</p>
+            <ul class="list-unstyled">
+                <li>✓ First scrape hasn't completed yet (wait 1-2 minutes)</li>
+                <li>✓ No listings match your current filters</li>
+                <li>✓ Database is empty - try adding test data</li>
+            </ul>
+            <div class="mt-3">
+                <button onclick="location.reload()" class="btn btn-primary me-2">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <a href="/api/db-stats" target="_blank" class="btn btn-outline-secondary">
+                    <i class="bi bi-database"></i> Check Database Stats
+                </a>
+            </div>
         </div>
         {% endif %}
     </div>
@@ -302,6 +321,16 @@
                 alert('Error updating status');
             }
         }
+
+        // Update last update time
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('he-IL');
+            document.getElementById('last-update').textContent = timeStr;
+        }
+
+        // Update time every second
+        setInterval(updateLastUpdateTime, 1000);
 
         // Auto-refresh every 5 minutes
         setTimeout(() => location.reload(), 5 * 60 * 1000);

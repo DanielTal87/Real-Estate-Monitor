@@ -35,54 +35,78 @@ class FacebookScraper(BaseScraper):
     async def scrape(self) -> List[Dict]:
         """Scrape Facebook Marketplace listings"""
         if not self.page:
+            logger.error("[Facebook Scraper] Browser page not initialized")
             return []
 
         listings = []
 
         try:
             # Navigate to Facebook Marketplace - search for apartments in Tel Aviv area
-            # This URL needs to be customized based on your search criteria
             search_url = f"{self.base_url}/marketplace/telaviv/search?query=דירה%20להשכרה&exact=false"
-
-            logger.info(f"Navigating to: {search_url}")
+            logger.info(f"[Facebook Scraper] Navigating to search page, url: {search_url}")
 
             await self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            logger.info("[Facebook Scraper] Page loaded successfully")
+
             await self.random_delay(3, 5)
+            logger.debug("[Facebook Scraper] Random delay completed")
 
             # Check if login is required
             current_url = self.page.url
+            logger.debug(f"[Facebook Scraper] Checking current URL, url: {current_url}")
+
             if 'login' in current_url.lower():
-                logger.warning("Facebook requires login. Please provide valid cookies.")
+                logger.warning("[Facebook Scraper] Login required - cookies missing or expired")
                 return []
 
             # Scroll to load more results
+            logger.info("[Facebook Scraper] Scrolling page to load dynamic content, scrolls: 4")
             await self.scroll_page(scrolls=4)
             await self.random_delay(2, 3)
 
             # Get listing cards
-            # Facebook's DOM structure changes frequently, these selectors may need updates
+            logger.info("[Facebook Scraper] Attempting to find listing cards with selector: [data-testid=\"marketplace-feed-item\"]")
             listing_cards = await self.page.query_selector_all('[data-testid="marketplace-feed-item"]')
 
             if not listing_cards:
-                # Try alternative selectors
+                logger.info("[Facebook Scraper] Primary selector failed, trying alternative: div[role=\"article\"]")
                 listing_cards = await self.page.query_selector_all('div[role="article"]')
 
-            logger.info(f"Found {len(listing_cards)} listing cards on Facebook")
+            if not listing_cards:
+                logger.info("[Facebook Scraper] Second selector failed, trying: [class*=\"marketplace\"]")
+                listing_cards = await self.page.query_selector_all('[class*="marketplace"]')
+
+            if not listing_cards:
+                logger.info("[Facebook Scraper] Third selector failed, trying generic: div[class*=\"feed\"] > div")
+                listing_cards = await self.page.query_selector_all('div[class*="feed"] > div, div[class*="item"]')
+
+            logger.info(f"[Facebook Scraper] Found listing cards, count: {len(listing_cards)}")
 
             # Process listings
-            for card in listing_cards[:30]:
+            max_listings = min(len(listing_cards), 30)
+            logger.info(f"[Facebook Scraper] Processing listings, max_count: {max_listings}")
+
+            for idx, card in enumerate(listing_cards[:30], 1):
                 try:
+                    logger.debug(f"[Facebook Scraper] Extracting listing data, index: {idx}/{max_listings}")
                     listing_data = await self._extract_listing_data(card)
                     if listing_data:
                         parsed = self.parse_listing(listing_data)
                         if parsed:
                             listings.append(parsed)
+                            logger.debug(f"[Facebook Scraper] Successfully parsed listing, title: {parsed.get('title', 'N/A')[:50]}")
+                        else:
+                            logger.debug(f"[Facebook Scraper] Failed to parse listing data, index: {idx}")
+                    else:
+                        logger.debug(f"[Facebook Scraper] Failed to extract listing data, index: {idx}")
                 except Exception as e:
-                    logger.warning(f"Error extracting Facebook listing: {e}")
+                    logger.warning(f"[Facebook Scraper] Error extracting listing, index: {idx}, error: {e}")
                     continue
 
+            logger.info(f"[Facebook Scraper] Scraping completed, total_listings: {len(listings)}")
+
         except Exception as e:
-            logger.error(f"Error scraping Facebook: {e}")
+            logger.error(f"[Facebook Scraper] Fatal error during scraping, error: {e}")
             raise
 
         return listings

@@ -16,45 +16,74 @@ class MadlanScraper(BaseScraper):
     async def scrape(self) -> List[Dict]:
         """Scrape Madlan listings"""
         if not self.page:
+            logger.error("[Madlan Scraper] Browser page not initialized")
             return []
 
         listings = []
 
         try:
-            # Navigate to Madlan rent page
+            # Navigate to Madlan for-sale page
             search_url = f"{self.base_url}/for-sale"
-            logger.info(f"Navigating to: {search_url}")
+            logger.info(f"[Madlan Scraper] Navigating to search page, url: {search_url}")
 
             await self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            logger.info("[Madlan Scraper] Page loaded successfully")
+
             await self.random_delay(2, 4)
+            logger.debug("[Madlan Scraper] Random delay completed")
 
             # Scroll to load more results
+            logger.info("[Madlan Scraper] Scrolling page to load dynamic content, scrolls: 3")
             await self.scroll_page(scrolls=3)
             await self.random_delay(1, 2)
 
             # Get listing cards - Madlan uses different selectors
+            logger.info("[Madlan Scraper] Attempting to find listing cards with selector: [data-testid=\"listing-card\"]")
             listing_cards = await self.page.query_selector_all('[data-testid="listing-card"]')
 
             if not listing_cards:
-                # Try alternative selector
+                logger.info("[Madlan Scraper] Primary selector failed, trying alternative: .listing-card")
                 listing_cards = await self.page.query_selector_all('.listing-card')
 
-            logger.info(f"Found {len(listing_cards)} listing cards on Madlan")
+            if not listing_cards:
+                logger.info("[Madlan Scraper] Second selector failed, trying: [class*=\"listing\"]")
+                listing_cards = await self.page.query_selector_all('[class*="listing"]')
+
+            if not listing_cards:
+                logger.info("[Madlan Scraper] Third selector failed, trying: [class*=\"card\"]")
+                listing_cards = await self.page.query_selector_all('[class*="card"]')
+
+            if not listing_cards:
+                logger.info("[Madlan Scraper] Fourth selector failed, trying generic: article a, div[class*=\"item\"] a")
+                listing_cards = await self.page.query_selector_all('article a, div[class*="item"] a')
+
+            logger.info(f"[Madlan Scraper] Found listing cards, count: {len(listing_cards)}")
 
             # Process only first 30 newest listings per scrape
-            for card in listing_cards[:30]:
+            max_listings = min(len(listing_cards), 30)
+            logger.info(f"[Madlan Scraper] Processing listings, max_count: {max_listings}")
+
+            for idx, card in enumerate(listing_cards[:30], 1):
                 try:
+                    logger.debug(f"[Madlan Scraper] Extracting listing data, index: {idx}/{max_listings}")
                     listing_data = await self._extract_listing_data(card)
                     if listing_data:
                         parsed = self.parse_listing(listing_data)
                         if parsed:
                             listings.append(parsed)
+                            logger.debug(f"[Madlan Scraper] Successfully parsed listing, title: {parsed.get('title', 'N/A')[:50]}")
+                        else:
+                            logger.debug(f"[Madlan Scraper] Failed to parse listing data, index: {idx}")
+                    else:
+                        logger.debug(f"[Madlan Scraper] Failed to extract listing data, index: {idx}")
                 except Exception as e:
-                    logger.warning(f"Error extracting Madlan listing: {e}")
+                    logger.warning(f"[Madlan Scraper] Error extracting listing, index: {idx}, error: {e}")
                     continue
 
+            logger.info(f"[Madlan Scraper] Scraping completed, total_listings: {len(listings)}")
+
         except Exception as e:
-            logger.error(f"Error scraping Madlan: {e}")
+            logger.error(f"[Madlan Scraper] Fatal error during scraping, error: {e}")
             raise
 
         return listings

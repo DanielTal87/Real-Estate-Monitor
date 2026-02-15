@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Search Filters
     cities: str = Field(default="תל אביב-יפו,רמת גן,גבעתיים", env="CITIES")
-    max_price: float = Field(default=8000, env="MAX_PRICE")
+    max_price: float = Field(default=3000000, env="MAX_PRICE")  # For sale properties (₪3M)
     min_rooms: float = Field(default=2.5, env="MIN_ROOMS")
     min_size_sqm: float = Field(default=65, env="MIN_SIZE_SQM")
 

@@ -35,6 +35,7 @@ class Yad2Scraper(BaseScraper):
     async def scrape(self) -> List[Dict]:
         """Scrape Yad2 listings"""
         if not self.page:
+            logger.error("[Yad2 Scraper] Browser page not initialized")
             return []
 
         listings = []
@@ -42,34 +43,62 @@ class Yad2Scraper(BaseScraper):
         try:
             # Navigate to search results
             search_url = self.build_search_url()
-            logger.info(f"Navigating to: {search_url}")
+            logger.info(f"[Yad2 Scraper] Navigating to search page, url: {search_url}")
 
             await self.page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+            logger.info("[Yad2 Scraper] Page loaded successfully")
+
             await self.random_delay(2, 4)
+            logger.debug("[Yad2 Scraper] Random delay completed")
 
             # Scroll to load more results
+            logger.info("[Yad2 Scraper] Scrolling page to load dynamic content, scrolls: 3")
             await self.scroll_page(scrolls=3)
             await self.random_delay(1, 2)
 
-            # Get listing cards
+            # Get listing cards - try multiple selectors as Yad2 changes frequently
+            logger.info("[Yad2 Scraper] Attempting to find listing cards with selector: .feeditem")
             listing_cards = await self.page.query_selector_all('.feeditem')
 
-            logger.info(f"Found {len(listing_cards)} listing cards on Yad2")
+            if not listing_cards:
+                logger.info("[Yad2 Scraper] Primary selector failed, trying alternative: [class*=\"feed_item\"]")
+                listing_cards = await self.page.query_selector_all('[class*="feed_item"]')
+
+            if not listing_cards:
+                logger.info("[Yad2 Scraper] Second selector failed, trying: [data-testid*=\"item\"]")
+                listing_cards = await self.page.query_selector_all('[data-testid*="item"]')
+
+            if not listing_cards:
+                logger.info("[Yad2 Scraper] Third selector failed, trying generic: article, div[class*=\"item\"]")
+                listing_cards = await self.page.query_selector_all('article, div[class*="item"], div[class*="card"]')
+
+            logger.info(f"[Yad2 Scraper] Found listing cards, count: {len(listing_cards)}")
 
             # Process only first 20-30 newest listings per scrape
-            for card in listing_cards[:30]:
+            max_listings = min(len(listing_cards), 30)
+            logger.info(f"[Yad2 Scraper] Processing listings, max_count: {max_listings}")
+
+            for idx, card in enumerate(listing_cards[:30], 1):
                 try:
+                    logger.debug(f"[Yad2 Scraper] Extracting listing data, index: {idx}/{max_listings}")
                     listing_data = await self._extract_listing_data(card)
                     if listing_data:
                         parsed = self.parse_listing(listing_data)
                         if parsed:
                             listings.append(parsed)
+                            logger.debug(f"[Yad2 Scraper] Successfully parsed listing, title: {parsed.get('title', 'N/A')[:50]}")
+                        else:
+                            logger.debug(f"[Yad2 Scraper] Failed to parse listing data, index: {idx}")
+                    else:
+                        logger.debug(f"[Yad2 Scraper] Failed to extract listing data, index: {idx}")
                 except Exception as e:
-                    logger.warning(f"Error extracting Yad2 listing: {e}")
+                    logger.warning(f"[Yad2 Scraper] Error extracting listing, index: {idx}, error: {e}")
                     continue
 
+            logger.info(f"[Yad2 Scraper] Scraping completed, total_listings: {len(listings)}")
+
         except Exception as e:
-            logger.error(f"Error scraping Yad2: {e}")
+            logger.error(f"[Yad2 Scraper] Fatal error during scraping, error: {e}")
             raise
 
         return listings

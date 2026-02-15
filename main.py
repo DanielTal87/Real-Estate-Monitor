@@ -7,6 +7,7 @@ Autonomous real estate listing monitor for Central Israel
 import asyncio
 import logging
 import sys
+import signal
 from pathlib import Path
 
 import uvicorn
@@ -45,14 +46,19 @@ async def run_scheduler():
     try:
         # Keep running
         while True:
-            await asyncio.sleep(60)
+            await asyncio.sleep(1)  # Check more frequently for faster shutdown
     except (KeyboardInterrupt, asyncio.CancelledError):
-        logger.info("Received shutdown signal")
-        scheduler.stop()
+        logger.info("Scheduler received shutdown signal")
+        raise  # Re-raise to ensure proper cancellation
     finally:
         # Ensure cleanup happens
-        if scheduler.is_running:
-            scheduler.stop()
+        logger.info("Cleaning up scheduler...")
+        try:
+            if scheduler.is_running:
+                scheduler.stop()
+        except Exception as e:
+            logger.error(f"Error stopping scheduler: {e}")
+        logger.info("Scheduler cleanup complete")
 
 
 async def run_dashboard():
@@ -65,7 +71,16 @@ async def run_dashboard():
         reload=False
     )
     server = uvicorn.Server(config)
-    await server.serve()
+
+    try:
+        await server.serve()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Dashboard received shutdown signal")
+        # Explicitly shutdown the server
+        server.should_exit = True
+        raise  # Re-raise to ensure proper cancellation
+    finally:
+        logger.info("Dashboard cleanup complete")
 
 
 async def main():
@@ -89,17 +104,32 @@ async def main():
     try:
         await asyncio.gather(scheduler_task, dashboard_task)
     except KeyboardInterrupt:
+        logger.info("=" * 60)
         logger.info("Shutting down gracefully...")
+        logger.info("=" * 60)
+
+        # Cancel both tasks
         scheduler_task.cancel()
         dashboard_task.cancel()
 
-        # Wait for tasks to complete cancellation
+        # Wait for tasks to complete cancellation with shorter timeout
         try:
-            await asyncio.gather(scheduler_task, dashboard_task, return_exceptions=True)
-        except Exception:
-            pass
+            await asyncio.wait_for(
+                asyncio.gather(scheduler_task, dashboard_task, return_exceptions=True),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Shutdown timeout - forcing exit")
+            # Force kill any remaining tasks
+            for task in [scheduler_task, dashboard_task]:
+                if not task.done():
+                    task.cancel()
+        except Exception as e:
+            logger.debug(f"Exception during shutdown: {e}")
 
-        logger.info("Goodbye!")
+        logger.info("=" * 60)
+        logger.info("Application stopped successfully")
+        logger.info("=" * 60)
 
 
 if __name__ == "__main__":

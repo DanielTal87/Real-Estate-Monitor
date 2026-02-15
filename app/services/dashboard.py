@@ -9,6 +9,7 @@ from app.core.config import settings
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,64 @@ app = FastAPI(title="Real Estate Monitor")
 
 # Setup templates
 templates = Jinja2Templates(directory="templates")
+
+# Add template helper functions
+def format_price(price):
+    """Format price with thousands separator"""
+    if not price:
+        return "N/A"
+    return f"₪{price:,.0f}"
+
+def days_ago(date):
+    """Return human-readable time since date"""
+    if not date:
+        return "Unknown"
+
+    delta = datetime.utcnow() - date
+
+    if delta.days == 0:
+        hours = delta.seconds // 3600
+        if hours == 0:
+            minutes = delta.seconds // 60
+            return f"{minutes} minutes ago" if minutes > 1 else "Just now"
+        return f"{hours} hours ago" if hours > 1 else "1 hour ago"
+    elif delta.days == 1:
+        return "Yesterday"
+    elif delta.days < 7:
+        return f"{delta.days} days ago"
+    elif delta.days < 30:
+        weeks = delta.days // 7
+        return f"{weeks} weeks ago" if weeks > 1 else "1 week ago"
+    else:
+        months = delta.days // 30
+        return f"{months} months ago" if months > 1 else "1 month ago"
+
+def get_whatsapp_url(phone, address, source):
+    """Generate WhatsApp URL with pre-filled message"""
+    if not phone:
+        return None
+
+    # Clean phone number
+    phone = phone.strip().replace('-', '').replace(' ', '')
+
+    # Add country code if not present
+    if not phone.startswith('+'):
+        if phone.startswith('0'):
+            phone = '+972' + phone[1:]
+        else:
+            phone = '+972' + phone
+
+    # Create message
+    message = f"Hi, I saw your listing on {source} for {address}. Is it still available?"
+    encoded_message = urllib.parse.quote(message)
+
+    return f"https://wa.me/{phone}?text={encoded_message}"
+
+# Register template filters
+templates.env.globals['format_price'] = format_price
+templates.env.globals['days_ago'] = days_ago
+templates.env.globals['get_whatsapp_url'] = get_whatsapp_url
+templates.env.globals['datetime'] = datetime
 
 # Database
 engine, SessionLocal = init_db(settings.database_url)
@@ -269,6 +328,90 @@ async def get_price_history(listing_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+async def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint with scraper status"""
+    from app.core.database import ScrapingState
+
+    # Get scraping states
+    states = db.query(ScrapingState).all()
+
+    scraper_status = {}
+    for state in states:
+        time_since_scrape = None
+        if state.last_scrape_time:
+            time_since_scrape = (datetime.utcnow() - state.last_scrape_time).total_seconds()
+
+        scraper_status[state.source] = {
+            "status": state.status,
+            "last_scrape": state.last_scrape_time.isoformat() if state.last_scrape_time else None,
+            "seconds_since_scrape": time_since_scrape,
+            "error_count": state.error_count,
+            "error_message": state.error_message
+        }
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "scrapers": scraper_status
+    }
+
+
+@app.get("/api/db-stats")
+async def database_stats(db: Session = Depends(get_db)):
+    """Get detailed database statistics for monitoring"""
+    from app.core.database import ScrapingState, PriceHistory
+
+    # Listing stats
+    total_listings = db.query(Listing).count()
+
+    # By status
+    by_status = db.query(
+        Listing.status,
+        func.count(Listing.id)
+    ).group_by(Listing.status).all()
+
+    # By source
+    by_source = db.query(
+        Listing.source,
+        func.count(Listing.id)
+    ).group_by(Listing.source).all()
+
+    # By city
+    by_city = db.query(
+        Listing.city,
+        func.count(Listing.id)
+    ).group_by(Listing.city).all()
+
+    # Recent activity
+    new_today = db.query(Listing).filter(
+        Listing.first_seen >= datetime.utcnow() - timedelta(days=1)
+    ).count()
+
+    new_week = db.query(Listing).filter(
+        Listing.first_seen >= datetime.utcnow() - timedelta(days=7)
+    ).count()
+
+    # Scraper status
+    scraper_states = db.query(ScrapingState).all()
+
+    return {
+        "database": {
+            "total_listings": total_listings,
+            "new_today": new_today,
+            "new_this_week": new_week,
+            "by_status": {status: count for status, count in by_status},
+            "by_source": {source: count for source, count in by_source},
+            "by_city": {city: count for city, count in by_city}
+        },
+        "scrapers": [
+            {
+                "source": s.source,
+                "status": s.status,
+                "last_scrape": s.last_scrape_time.isoformat() if s.last_scrape_time else None,
+                "error_count": s.error_count,
+                "error_message": s.error_message
+            }
+            for s in scraper_states
+        ],
+        "timestamp": datetime.utcnow().isoformat()
+    }

@@ -28,6 +28,8 @@ class ListingProcessor:
         Process a batch of listings from a source
         Returns stats: {new: X, updated: X, duplicates: X, filtered: X}
         """
+        logger.info(f"[Listing Processor] Starting batch processing, source: {source}, count: {len(listings)}")
+
         stats = {
             'new': 0,
             'updated': 0,
@@ -36,15 +38,18 @@ class ListingProcessor:
             'price_drops': 0
         }
 
-        for listing_data in listings:
+        for idx, listing_data in enumerate(listings, 1):
             try:
+                logger.debug(f"[Listing Processor] Processing listing, index: {idx}/{len(listings)}, source: {source}")
                 result = self.process_single_listing(listing_data, source)
                 stats[result] += 1
+                logger.debug(f"[Listing Processor] Listing processed, result: {result}, index: {idx}")
             except Exception as e:
-                logger.error(f"Error processing listing: {e}")
+                logger.error(f"[Listing Processor] Error processing listing, index: {idx}, error: {e}")
                 continue
 
         self.db.commit()
+        logger.info(f"[Listing Processor] Batch processing completed, source: {source}, stats: {stats}")
         return stats
 
     def process_single_listing(self, listing_data: Dict, source: str) -> str:
@@ -52,12 +57,18 @@ class ListingProcessor:
         Process a single listing
         Returns: 'new', 'updated', 'duplicates', or 'filtered'
         """
+        title = listing_data.get('title', 'N/A')[:50]
+        price = listing_data.get('price', 0)
+
+        logger.debug(f"[Listing Processor] Applying filters, title: {title}, price: {price}")
 
         # Apply filters first using the filter utility
         passes, reason = self.listing_filter.passes_all_filters(listing_data)
         if not passes:
-            logger.debug(f"Listing filtered out: {reason}")
+            logger.info(f"[Listing Processor] Listing filtered out, reason: {reason}, title: {title}")
             return 'filtered'
+
+        logger.debug(f"[Listing Processor] Listing passed all filters, title: {title}")
 
         # Generate property hash
         address = listing_data.get('address', '')
@@ -88,6 +99,8 @@ class ListingProcessor:
 
     def _create_new_listing(self, listing_data: Dict, property_hash: str) -> str:
         """Create a new listing"""
+        title = listing_data.get('title', 'N/A')[:50]
+        logger.info(f"[Listing Processor] Creating new listing, title: {title}, hash: {property_hash[:16]}")
 
         listing = Listing(
             property_hash=property_hash,
@@ -146,11 +159,12 @@ class ListingProcessor:
             )
             self.db.add(desc_history)
 
-        logger.info(f"Created new listing: {listing.title} (Score: {listing.deal_score:.1f})")
+        logger.info(f"[Listing Processor] New listing created successfully, title: {listing.title[:50]}, score: {listing.deal_score:.1f}, price: {listing.price}")
         return 'new'
 
     def _update_existing_listing(self, listing: Listing, listing_data: Dict) -> str:
         """Update an existing listing"""
+        logger.debug(f"[Listing Processor] Updating existing listing, id: {listing.id}, title: {listing.title[:50]}")
 
         # Update last seen
         listing.last_seen = datetime.utcnow()
@@ -163,6 +177,7 @@ class ListingProcessor:
         new_price = listing_data.get('price')
         if new_price and new_price != listing.price:
             old_price = listing.price
+            logger.info(f"[Listing Processor] Price change detected, id: {listing.id}, old_price: {old_price}, new_price: {new_price}")
             listing.price = new_price
 
             # Recalculate price per sqm
@@ -183,7 +198,7 @@ class ListingProcessor:
             # Check for price drop
             if old_price and new_price < old_price:
                 drop_pct = ((old_price - new_price) / old_price) * 100
-                logger.info(f"🔥 Price drop detected: {listing.title} - {drop_pct:.1f}% drop")
+                logger.info(f"[Listing Processor] 🔥 Price drop detected, id: {listing.id}, title: {listing.title[:50]}, drop_percent: {drop_pct:.1f}%, old_price: {old_price}, new_price: {new_price}")
 
                 # Reset status if significant drop
                 if drop_pct >= self.settings.min_price_drop_percent_notify:
@@ -217,13 +232,13 @@ class ListingProcessor:
         listing.deal_score = self.deal_calculator.calculate_score(listing)
 
         if price_changed:
-            logger.info(f"Updated listing with price change: {listing.title} "
-                       f"(Score: {old_score:.1f} → {listing.deal_score:.1f})")
+            logger.info(f"[Listing Processor] Listing updated with price change, id: {listing.id}, title: {listing.title[:50]}, score_change: {old_score:.1f} → {listing.deal_score:.1f}")
             # Check if price actually dropped (compare new_price with old_price from line 179)
             return 'price_drops' if new_price < old_price else 'updated'
         elif description_changed:
-            logger.info(f"Updated listing with description change: {listing.title}")
+            logger.info(f"[Listing Processor] Listing updated with description change, id: {listing.id}, title: {listing.title[:50]}")
             return 'updated'
         else:
+            logger.debug(f"[Listing Processor] Duplicate listing (no changes), id: {listing.id}")
             return 'duplicates'
 
